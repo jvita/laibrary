@@ -1,7 +1,7 @@
 [project]
-name = "your-project-name"
+name = "laibrary"
 version = "0.1.0"
-description = "A brief description of your project"
+description = "An AI-curated library of your thoughts and ideas"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
