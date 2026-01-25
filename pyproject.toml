@@ -7,6 +7,7 @@ requires-python = ">=3.12"
 dependencies = [
     # Add your project dependencies here
     "langgraph>=1.0.7",
+    "pydantic-ai>=1.47.0",
 ]
 
 [build-system]

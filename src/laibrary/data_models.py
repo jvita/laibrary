@@ -11,11 +11,12 @@ class Note(BaseModel):
     path: Path
 
 
-class Idea(Note):
-    """An idea is a Note, but with additional `name` and `description` fields which are used when building the catalog of ideas."""
+class Idea(BaseModel):
+    """An idea/concept/topic with name and description."""
 
     name: str
     description: str
+    is_new: bool
 
 
 class Database(BaseModel):
@@ -24,3 +25,19 @@ class Database(BaseModel):
     path: Path
     ideas: list[Idea] | None = None
     notes: list[Note] | None = None
+
+
+class NoteProcessingState(BaseModel):
+    """For tracking the status of note processing (categorization)."""
+
+    note: Note
+    existing_ideas: list[Idea]
+    database_path: Path
+
+
+class IdeaUpdateState(BaseModel):
+    """State for creating or updating an idea."""
+
+    database_path: Path
+    idea: Idea
+    note: Note
