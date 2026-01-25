@@ -1,13 +1,16 @@
 {
     "editor.formatOnSave": true,
     "editor.codeActionsOnSave": {
+        "source.fixall.ruff": "always",
         "source.organizeImports.ruff": "explicit"
     },
     "editor.defaultFormatter": "charliermarsh.ruff",
-    "editor.rulers": [72, 88],
+    "editor.rulers": [88],
     "editor.wordWrap": "on",
     "editor.wordWrapColumn": 88,
-    "rewrap.wrappingColumn": 72,
+    "rewrap.autoWrap.enabled": true,
+    "rewrap.wrappingColumn": 88,
+    // "rewrap.wrappingColumn": 72,
     // Turn off python's built-in autodoc, and use extension instead
     "python.analysis.supportDocstringTemplate": false,
     "autoDocstring.docstringFormat": "google",
