@@ -1,0 +1,55 @@
+[project]
+name = "your-project-name"
+version = "0.1.0"
+description = "A brief description of your project"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    # Add your project dependencies here
+]
+
+[build-system]
+requires = ["uv_build>=0.9.21,<0.10.0"]
+build-backend = "uv_build"
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+
+[tool.ruff.lint]
+# E/W: Errors/Warnings, F: Pyflakes, I: Isort, B: Bugbear, N: PEP8-Naming, D: Docstrings, UP: Unused imports and variables
+select = ["E", "W", "F", "I", "B", "N", "D", "UP"]
+ignore = [
+    "B008",  # Ignore "function call in default argument" (common in Typer)
+    "D203",  # Ignore "1 blank line required before class docstring"
+    "D213",  # Ignore "Multi-line docstring summary should start at the second line"
+    "E501",  # Ignore line length in all code (docstrings need to be parseable)
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[dependency-groups]
+dev = [
+    "mkdocs>=1.6.1",
+    "mkdocs-material>=9.7.1",
+    "mkdocstrings[python]>=1.0.0",
+    "pre-commit>=4.5.1",
+    "pytest>=8.0.0",
+    "pytest-cov>=6.0.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "--strict-markers",
+    "--strict-config",
+    "-ra",
+]

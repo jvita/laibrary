@@ -1,0 +1,22 @@
+{
+    "editor.formatOnSave": true,
+    "editor.codeActionsOnSave": {
+        "source.organizeImports.ruff": "explicit"
+    },
+    "editor.defaultFormatter": "charliermarsh.ruff",
+    "editor.rulers": [72, 88],
+    "editor.wordWrap": "on",
+    "editor.wordWrapColumn": 88,
+    "rewrap.wrappingColumn": 72,
+    // Turn off python's built-in autodoc, and use extension instead
+    "python.analysis.supportDocstringTemplate": false,
+    "autoDocstring.docstringFormat": "google",
+    "autoDocstring.startOnNewLine": false,
+    "ruff.configuration": {
+        "lint": {
+            "pydocstyle": {
+                "convention": "google"
+            }
+        }
+    }
+}
