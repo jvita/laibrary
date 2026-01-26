@@ -1,36 +1,62 @@
-"""Agents used for note/idea management."""
+"""Agents for the graph RAG system."""
 
 import os
 
 from dotenv import load_dotenv
 from pydantic_ai import Agent
 
-from .data_models import Idea
-
 load_dotenv()
 
-categorization_agent = Agent(
+title_agent = Agent(
     os.environ["MODEL"],
-    output_type=list[Idea],
-    system_prompt="""You are a librarian tasked with maintaining a digital library.
+    output_type=str,
+    system_prompt="""Generate a concise title (5-10 words) summarizing the main topic
+or theme of this note. The title should capture the essence of the content.
 
-Your job is to:
-- Maintain a catalog of unique ideas/concepts/topics
-- Categorize new documents by either marking them as being related to an existing
-idea/concept/topic, or classifying them as an entirely new idea/concept/topic.
+Return ONLY the title text, nothing else.""",
+)
+
+summary_agent = Agent(
+    os.environ["MODEL"],
+    output_type=str,
+    system_prompt="""Create a comprehensive summary synthesizing the provided notes
+about a specific topic.
+
+Guidelines:
+- Organize the summary by themes or subtopics, NOT by individual notes
+- Synthesize information across all notes to create a cohesive narrative
+- Note areas of uncertainty, contradiction, or evolving understanding
+- Use clear, concise language
+- Include a "Sources" section at the end listing the note IDs that contributed
+
+Format:
+# [Topic Title]
+
+[Main summary content organized by themes]
+
+## Sources
+- [Note ID 1]: [Brief description]
+- [Note ID 2]: [Brief description]
 """,
 )
 
-update_agent = Agent(
+reconcile_agent = Agent(
     os.environ["MODEL"],
     output_type=str,
-    system_prompt="""You are an assistant whose
-job is to maintain 'living documents' by taking in a SOURCE document and using it to
-update a TARGET document. Your goal is for the TARGET document to provide a user with a
-comprehensive overview of an idea/concept/topic.
+    system_prompt="""Update an existing summary with new information from recently
+added notes.
 
-IMPORTANT:
-- Avoid removing information. Instead, if information from SOURCE supersedes/contradicts
-existing information in TARGET, strike out the outdated text using ~~~<text>~~~ syntax.
-""",
+You will receive:
+- EXISTING_SUMMARY: The current summary content
+- NEW_NOTES: Recently added notes that should be incorporated
+
+Guidelines:
+- Integrate new information seamlessly into the existing structure
+- If new information contradicts existing content, note the evolution of understanding
+- Preserve the overall structure of the existing summary
+- Add new sections only if genuinely new topics emerge
+- Update the Sources section with new note references
+- Mark any superseded information appropriately
+
+Return the complete updated summary.""",
 )
