@@ -1,241 +1,114 @@
-"""CLI interface for laibrary."""
+"""Typer CLI for the PKM system."""
 
 import asyncio
 from pathlib import Path
 
+import logfire
 import typer
-from rich.console import Console
-from rich.table import Table
+from dotenv import load_dotenv
+
+from .git_wrapper import IsolatedGitRepo
+from .workflow import run_workflow
+
+# Load environment variables from .env file
+load_dotenv()
+
+# Configure logfire
+logfire.configure()
+logfire.instrument_pydantic_ai()
 
 app = typer.Typer(
     name="laibrary",
-    help="An AI-curated library of your thoughts and ideas using graph-based RAG.",
+    help="Evolutionary PKM system with LLM-powered document updates",
 )
-console = Console()
 
-# Default paths
-DEFAULT_DATA_DIR = Path("./data")
-DEFAULT_NOTES_DIR = DEFAULT_DATA_DIR / "raw"
-DEFAULT_INDEX_DIR = DEFAULT_DATA_DIR / "index"
-DEFAULT_SUMMARIES_DIR = DEFAULT_DATA_DIR / "summaries"
+
+def get_data_dir() -> Path:
+    """Get the data directory path."""
+    return Path("data")
 
 
 @app.command()
-def ingest(
-    notes_dir: Path = typer.Option(
-        DEFAULT_NOTES_DIR, "--notes", "-n", help="Directory containing notes"
-    ),
-    index_dir: Path = typer.Option(
-        DEFAULT_INDEX_DIR, "--index", "-i", help="Directory for index data"
-    ),
-    all_notes: bool = typer.Option(
-        False, "--all", "-a", help="Re-index all notes (not just new/modified)"
-    ),
-    embedding_model: str = typer.Option(
-        "qwen3-embedding:8b", "--embed-model", "-e", help="Ollama embedding model"
-    ),
-) -> None:
-    """Ingest notes into the knowledge graph."""
-    import os
+def init() -> None:
+    """Initialize the PKM data directory with git tracking."""
+    data_dir = get_data_dir()
+    repo = IsolatedGitRepo(data_dir)
 
-    from dotenv import load_dotenv
+    # Initialize git repo
+    repo.init()
+    typer.echo(f"Initialized git repository at {data_dir}/.git")
 
-    from .ingestion import run_ingestion
+    # Create welcome document if it doesn't exist
+    welcome_file = "welcome.md"
+    if not repo.file_exists(welcome_file):
+        welcome_content = """\
+# Welcome to Laibrary
 
-    load_dotenv()
-    model = os.environ.get("MODEL", "qwen3:14b")
+This is your personal knowledge management system.
 
-    run_ingestion(
-        notes_dir=notes_dir,
-        index_dir=index_dir,
-        model=model,
-        embedding_model=embedding_model,
-        reindex_all=all_notes,
-        console=console,
-    )
+## Getting Started
 
+Add notes using the command:
+```
+laibrary note "Your note here"
+```
 
-@app.command()
-def query(
-    query_text: str = typer.Argument(..., help="Search query"),
-    index_dir: Path = typer.Option(
-        DEFAULT_INDEX_DIR, "--index", "-i", help="Directory for index data"
-    ),
-    top_k: int = typer.Option(10, "--top", "-k", help="Number of results"),
-    expand: int = typer.Option(0, "--expand", "-x", help="Graph expansion hops"),
-) -> None:
-    """Query the knowledge graph for relevant notes."""
-    from .retrieval import retrieve
+Your notes will be automatically organized and integrated into your documents.
+"""
+        repo.write_file(welcome_file, welcome_content)
+        repo.add_and_commit(welcome_file, "Initialize PKM with welcome document")
+        typer.echo(f"Created {welcome_file}")
 
-    with console.status("[bold green]Searching..."):
-        notes = retrieve(
-            query=query_text,
-            index_dir=index_dir,
-            top_k=top_k,
-            expand_hops=expand,
-        )
-
-    if not notes:
-        console.print("[yellow]No relevant notes found.[/yellow]")
-        return
-
-    table = Table(title=f"Results for: {query_text}")
-    table.add_column("Title", style="cyan")
-    table.add_column("Path", style="dim")
-    table.add_column("Date", style="green")
-
-    for note in notes:
-        table.add_row(
-            note.title or "Untitled",
-            str(note.path),
-            note.created_at.strftime("%Y-%m-%d"),
-        )
-
-    console.print(table)
+    typer.echo("PKM system initialized successfully!")
 
 
 @app.command()
-def summarize(
-    topic: str = typer.Argument(..., help="Topic to summarize"),
-    index_dir: Path = typer.Option(
-        DEFAULT_INDEX_DIR, "--index", "-i", help="Directory for index data"
-    ),
-    summaries_dir: Path = typer.Option(
-        DEFAULT_SUMMARIES_DIR, "--summaries", "-s", help="Directory for summaries"
-    ),
-    update: bool = typer.Option(
-        False, "--update", "-u", help="Update existing summary with new notes"
-    ),
-    top_k: int = typer.Option(10, "--top", "-k", help="Number of notes to consider"),
-    commit: bool = typer.Option(
-        True, "--commit/--no-commit", help="Commit changes to git"
-    ),
-) -> None:
-    """Generate or update a summary for a topic."""
-    from .summarization import summarize_topic
-    from .versioning import commit_summary_update
+def note(content: str) -> None:
+    """Process a note and update documents accordingly."""
+    data_dir = get_data_dir()
 
-    with console.status(
-        f"[bold green]{'Updating' if update else 'Generating'} summary..."
-    ):
-        try:
-            summary, was_updated = asyncio.run(
-                summarize_topic(
-                    topic=topic,
-                    index_dir=index_dir,
-                    summaries_dir=summaries_dir,
-                    update_existing=update,
-                    top_k=top_k,
-                )
-            )
-        except ValueError as e:
-            console.print(f"[red]Error: {e}[/red]")
-            raise typer.Exit(1) from e
-
-    if was_updated:
-        console.print(f"[green]Summary {'updated' if update else 'created'}![/green]")
-        console.print(f"  Topic: {summary.topic}")
-        console.print(f"  Version: {summary.version}")
-        console.print(f"  Path: {summary.path}")
-        console.print(f"  Notes incorporated: {len(summary.incorporated_note_ids)}")
-
-        if commit:
-            repo_path = Path.cwd()  # Use current working directory as repo root
-            try:
-                commit_hash = commit_summary_update(summary, repo_path)
-                console.print(f"  Git commit: {commit_hash[:8]}")
-            except Exception as e:
-                console.print(f"  [yellow]Git commit skipped: {e}[/yellow]")
-                console.print("  [dim]You can manually commit the changes.[/dim]")
-    else:
-        console.print("[yellow]No updates needed - summary is current.[/yellow]")
-        console.print(f"  Path: {summary.path}")
-
-
-@app.command()
-def history(
-    summary_name: str = typer.Argument(..., help="Summary name (without .md)"),
-    summaries_dir: Path = typer.Option(
-        DEFAULT_SUMMARIES_DIR, "--summaries", "-s", help="Directory for summaries"
-    ),
-    diff: tuple[str, str] = typer.Option(
-        (None, None), "--diff", "-d", help="Show diff between two commits"
-    ),
-) -> None:
-    """View version history for a summary."""
-    from .versioning import SummaryVersionControl
-
-    summary_path = summaries_dir / f"{summary_name}.md"
-    if not summary_path.exists():
-        console.print(f"[red]Summary not found: {summary_path}[/red]")
+    if not (data_dir / ".git").exists():
+        typer.echo("Error: PKM not initialized. Run 'laibrary init' first.", err=True)
         raise typer.Exit(1)
 
-    repo_path = summaries_dir.parent
-    vc = SummaryVersionControl(repo_path)
+    typer.echo("Processing note...")
 
-    if diff[0] and diff[1]:
-        # Show diff between two versions
-        diff_text = vc.diff_versions(summary_path, diff[0], diff[1])
-        if diff_text:
-            console.print(diff_text)
-        else:
-            console.print("[yellow]No differences or commits not found.[/yellow]")
-        return
+    result = asyncio.run(run_workflow(content, data_dir))
 
-    # Show version history
-    versions = vc.get_history(summary_path)
+    if result.get("error"):
+        typer.echo(f"Error: {result['error']}", err=True)
+        raise typer.Exit(1)
 
-    if not versions:
-        console.print("[yellow]No version history found.[/yellow]")
-        return
-
-    table = Table(title=f"History: {summary_name}")
-    table.add_column("Version", style="cyan")
-    table.add_column("Commit", style="dim")
-    table.add_column("Date", style="green")
-
-    for v in versions:
-        table.add_row(
-            str(v.version),
-            v.git_commit[:8],
-            v.created_at.strftime("%Y-%m-%d %H:%M"),
-        )
-
-    console.print(table)
+    if result.get("committed"):
+        update = result.get("document_update")
+        if update:
+            typer.echo(f"Updated: {update.target_file}")
+            typer.echo(f"Commit: {update.commit_message}")
+    else:
+        typer.echo("No changes made.")
 
 
 @app.command()
-def status(
-    index_dir: Path = typer.Option(
-        DEFAULT_INDEX_DIR, "--index", "-i", help="Directory for index data"
-    ),
-    summaries_dir: Path = typer.Option(
-        DEFAULT_SUMMARIES_DIR, "--summaries", "-s", help="Directory for summaries"
-    ),
-    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show detailed stats"),
-) -> None:
-    """Show knowledge graph status."""
-    from .ingestion import load_graph
+def status() -> None:
+    """List all documents in the PKM system."""
+    data_dir = get_data_dir()
 
-    graph = load_graph(index_dir)
+    if not (data_dir / ".git").exists():
+        typer.echo("Error: PKM not initialized. Run 'laibrary init' first.", err=True)
+        raise typer.Exit(1)
 
-    console.print("[bold]Knowledge Graph Status[/bold]")
-    console.print(f"  Notes indexed: {len(graph.notes)}")
-    console.print(f"  Edges: {len(graph.edges)}")
-    console.print(f"  Summaries: {len(graph.summaries)}")
+    repo = IsolatedGitRepo(data_dir)
+    files = repo.list_files()
 
-    if verbose and graph.notes:
-        console.print("\n[bold]Recent Notes:[/bold]")
-        sorted_notes = sorted(
-            graph.notes.values(), key=lambda n: n.indexed_at, reverse=True
-        )
-        for note in sorted_notes[:5]:
-            console.print(f"  - {note.title or 'Untitled'} ({note.path.name})")
+    if not files:
+        typer.echo("No documents found.")
+        return
 
-    if verbose and graph.summaries:
-        console.print("\n[bold]Summaries:[/bold]")
-        for summary in graph.summaries.values():
-            console.print(f"  - {summary.topic} (v{summary.version})")
+    typer.echo("Documents:")
+    for f in files:
+        content = repo.get_file_content(f)
+        lines = len(content.splitlines()) if content else 0
+        typer.echo(f"  {f} ({lines} lines)")
 
 
 def main() -> None:

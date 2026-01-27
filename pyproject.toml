@@ -8,6 +8,8 @@ dependencies = [
     # Core
     "langgraph>=1.0.7",
     "pydantic-ai>=1.47.0",
+    "logfire>=3.0.0",
+    "python-dotenv>=1.0.0",
     # Graph RAG
     "networkx>=3.0",
     "chromadb>=0.4.0",

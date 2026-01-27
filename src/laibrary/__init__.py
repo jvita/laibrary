@@ -1,7 +1,18 @@
-"""Laibrary: An AI-curated library of your thoughts and ideas using graph-based RAG."""
+"""Laibrary - Evolutionary PKM System."""
 
-__version__ = "0.1.0"
+from .cli import app as cli_app
+from .exceptions import EditApplicationError
+from .git_wrapper import IsolatedGitRepo
+from .schemas import DocumentEdit, DocumentUpdate, PKMState
+from .workflow import create_workflow, run_workflow
 
-from .graph_models import IndexedNote, KnowledgeGraph, Summary
-
-__all__ = ["IndexedNote", "KnowledgeGraph", "Summary"]
+__all__ = [
+    "cli_app",
+    "create_workflow",
+    "run_workflow",
+    "IsolatedGitRepo",
+    "DocumentEdit",
+    "DocumentUpdate",
+    "PKMState",
+    "EditApplicationError",
+]
