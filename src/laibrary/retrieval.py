@@ -14,7 +14,7 @@ def vector_search(
     query: str,
     collection: chromadb.Collection,
     k: int = 10,
-    embedding_model: str = "nomic-embed-text",
+    embedding_model: str = "qwen3-embedding:8b",
 ) -> list[tuple[str, float]]:
     """Search for similar notes using vector similarity.
 
@@ -70,12 +70,14 @@ def graph_expand(
         Set of expanded note IDs (including originals)
     """
     # Build NetworkX graph for traversal
-    graph = nx.Graph()
+    nx_graph = nx.Graph()
     for note_id in graph.notes:
-        graph.add_node(note_id)
+        nx_graph.add_node(note_id)
     for edge in graph.edges:
         if edge.weight >= min_weight:
-            graph.add_edge(str(edge.source_id), str(edge.target_id), weight=edge.weight)
+            nx_graph.add_edge(
+                str(edge.source_id), str(edge.target_id), weight=edge.weight
+            )
 
     # Expand from each starting node
     expanded = set(str(nid) for nid in note_ids)
@@ -83,8 +85,8 @@ def graph_expand(
     for _ in range(hops):
         new_nodes = set()
         for node_id in expanded:
-            if node_id in graph:
-                neighbors = graph.neighbors(node_id)
+            if node_id in nx_graph:
+                neighbors = nx_graph.neighbors(node_id)
                 new_nodes.update(neighbors)
         expanded.update(new_nodes)
 
@@ -95,9 +97,9 @@ def retrieve(
     query: str,
     index_dir: Path,
     top_k: int = 10,
-    expand_hops: int = 1,
-    min_similarity: float = 0.3,
-    embedding_model: str = "nomic-embed-text",
+    expand_hops: int = 0,
+    min_similarity: float = 0.5,
+    embedding_model: str = "qwen3-embedding:8b",
 ) -> list[IndexedNote]:
     """Retrieve relevant notes for a query.
 

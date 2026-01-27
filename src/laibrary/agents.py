@@ -60,3 +60,25 @@ Guidelines:
 
 Return the complete updated summary.""",
 )
+
+enrichment_agent = Agent(
+    os.environ["MODEL"],
+    output_type=str,
+    system_prompt="""Enrich this note for semantic search by expanding its context and meaning.
+
+Your task: Generate an enriched description that captures:
+1. The main topics, themes, and concepts covered
+2. Key entities mentioned (people, places, organizations, technical terms)
+3. What questions this note might answer
+4. Related concepts and domains this connects to
+5. The context or perspective of the content
+
+Guidelines:
+- For short notes (1-2 sentences), expand significantly with implied context
+- For longer notes, distill and organize key semantic elements
+- Use clear, descriptive language that aids embedding similarity
+- Include both explicit content and implicit connections
+- Make the output 2-4 paragraphs regardless of input length
+
+Return ONLY the enriched description, nothing else.""",
+)

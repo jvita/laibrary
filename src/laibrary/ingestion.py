@@ -55,7 +55,7 @@ def detect_changes(
     return new_paths, modified_paths
 
 
-def generate_embedding(content: str, model: str = "nomic-embed-text") -> list[float]:
+def generate_embedding(content: str, model: str = "qwen3-embedding:8b") -> list[float]:
     """Generate embedding vector using Ollama."""
     response = ollama.embed(model=model, input=content)
     return response["embeddings"][0]
@@ -70,18 +70,27 @@ async def extract_title(content: str, model: str) -> str:
     return result.output
 
 
+async def enrich_content(content: str, model: str) -> str:
+    """Enrich note content for better embedding by expanding context and semantics."""
+    # Import here to avoid circular imports
+    from .agents import enrichment_agent
+
+    result = await enrichment_agent.run(content)
+    return result.output
+
+
 async def ingest_note(
     path: Path,
     chroma_collection: chromadb.Collection,
     model: str,
-    embedding_model: str = "nomic-embed-text",
+    embedding_model: str = "qwen3-embedding:8b",
 ) -> tuple[IndexedNote, list[float]]:
     """Ingest a single note into the system.
 
     Args:
         path: Path to the markdown note
         chroma_collection: ChromaDB collection for vector storage
-        model: LLM model name for title extraction
+        model: LLM model name for title extraction and content enrichment
         embedding_model: Ollama model for embeddings
 
     Returns:
@@ -92,11 +101,14 @@ async def ingest_note(
     created_at, _ = get_file_timestamps(path)
     indexed_at = datetime.now(UTC)
 
-    # Generate embedding
-    embedding = generate_embedding(content, model=embedding_model)
+    # Extract title and enrich content using LLM
+    # title = await extract_title(content, model)
+    # enriched_content = await enrich_content(content, model)
+    title = path.stem
+    enriched_content = content
 
-    # Extract title using LLM
-    title = await extract_title(content, model)
+    # Generate embedding from enriched content (not original)
+    embedding = generate_embedding(enriched_content, model=embedding_model)
 
     # Create the indexed note
     note = IndexedNote(
@@ -107,17 +119,18 @@ async def ingest_note(
         title=title,
     )
 
-    # Store in ChromaDB
+    # Store in ChromaDB - documents contain original content, embeddings from enriched
     chroma_collection.add(
         ids=[str(note.id)],
         embeddings=[embedding],
-        documents=[content],
+        documents=[content],  # Store original for retrieval
         metadatas=[
             {
                 "path": str(path),
                 "title": title or "",
                 "created_at": created_at.isoformat(),
                 "indexed_at": indexed_at.isoformat(),
+                "enriched_content": enriched_content,  # Store enrichment for debugging
             }
         ],
     )
@@ -166,9 +179,9 @@ def build_semantic_edges(
         for note_id_str, distance in zip(
             results["ids"][0], results["distances"][0], strict=False
         ):
-            # Convert distance to similarity (ChromaDB uses L2 by default)
-            # For cosine distance: similarity = 1 - distance/2
-            similarity = max(0, 1 - distance / 2)
+            # Convert distance to similarity
+            # ChromaDB with cosine space returns cosine distance (1 - similarity)
+            similarity = max(0, 1 - distance)
 
             if similarity >= threshold:
                 edges.append(
@@ -182,16 +195,16 @@ def build_semantic_edges(
     return edges[:max_edges]
 
 
-def build_networkx_graph(graph: KnowledgeGraph) -> nx.Graph:
+def build_networkx_graph(knowledge_graph: KnowledgeGraph) -> nx.Graph:
     """Build a NetworkX graph from the knowledge graph."""
     graph = nx.Graph()
 
     # Add nodes
-    for note_id, note in graph.notes.items():
+    for note_id, note in knowledge_graph.notes.items():
         graph.add_node(note_id, title=note.title, path=str(note.path))
 
     # Add edges
-    for edge in graph.edges:
+    for edge in knowledge_graph.edges:
         graph.add_edge(str(edge.source_id), str(edge.target_id), weight=edge.weight)
 
     return graph
@@ -274,7 +287,7 @@ async def run_ingestion_async(
     notes_dir: Path,
     index_dir: Path,
     model: str,
-    embedding_model: str = "nomic-embed-text",
+    embedding_model: str = "qwen3-embedding:8b",
     reindex_all: bool = False,
     console: Console | None = None,
 ) -> tuple[int, int]:
@@ -378,7 +391,7 @@ def run_ingestion(
     notes_dir: Path,
     index_dir: Path,
     model: str,
-    embedding_model: str = "nomic-embed-text",
+    embedding_model: str = "qwen3-embedding:8b",
     reindex_all: bool = False,
     console: Console | None = None,
 ) -> tuple[int, int]:

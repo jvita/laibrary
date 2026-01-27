@@ -32,7 +32,7 @@ def ingest(
         False, "--all", "-a", help="Re-index all notes (not just new/modified)"
     ),
     embedding_model: str = typer.Option(
-        "nomic-embed-text", "--embed-model", "-e", help="Ollama embedding model"
+        "qwen3-embedding:8b", "--embed-model", "-e", help="Ollama embedding model"
     ),
 ) -> None:
     """Ingest notes into the knowledge graph."""
@@ -62,7 +62,7 @@ def query(
         DEFAULT_INDEX_DIR, "--index", "-i", help="Directory for index data"
     ),
     top_k: int = typer.Option(10, "--top", "-k", help="Number of results"),
-    expand: int = typer.Option(1, "--expand", "-x", help="Graph expansion hops"),
+    expand: int = typer.Option(0, "--expand", "-x", help="Graph expansion hops"),
 ) -> None:
     """Query the knowledge graph for relevant notes."""
     from .retrieval import retrieve
