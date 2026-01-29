@@ -9,6 +9,7 @@ import logfire
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent
 
+from .config import MAX_RETRIES
 from .git_wrapper import IsolatedGitRepo
 from .nodes.summaries import SummaryCache, generate_summary
 from .prompts import QUERY_SYSTEM_PROMPT, ROUTER_SYSTEM_PROMPT, SELECTOR_SYSTEM_PROMPT
@@ -64,6 +65,7 @@ def _create_router_agent() -> Agent[None, RouterDecision]:
         os.environ["MODEL"],
         system_prompt=ROUTER_SYSTEM_PROMPT,
         output_type=RouterDecision,
+        retries=MAX_RETRIES,
     )
 
 
@@ -178,6 +180,7 @@ async def _select_documents(query: str, summaries: dict[str, str]) -> list[str] 
             os.environ["MODEL"],
             system_prompt=SELECTOR_SYSTEM_PROMPT,
             output_type=SelectionResult,
+            retries=MAX_RETRIES,
         )
         result = await agent.run(prompt)
         selection = result.output
@@ -260,6 +263,7 @@ async def _handle_query(
     query_agent = Agent(
         os.environ["MODEL"],
         system_prompt=QUERY_SYSTEM_PROMPT,
+        retries=MAX_RETRIES,
     )
 
     try:

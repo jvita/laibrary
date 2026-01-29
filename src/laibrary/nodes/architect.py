@@ -6,6 +6,7 @@ from pathlib import Path
 import logfire
 from pydantic_ai import Agent
 
+from ..config import MAX_RETRIES
 from ..prompts import ARCHITECT_MULTI_SYSTEM_PROMPT, ARCHITECT_SYSTEM_PROMPT
 from ..schemas import DocumentUpdate, MultiDocumentUpdate, PKMState
 
@@ -43,6 +44,7 @@ def _create_agent() -> Agent[None, DocumentUpdate]:
         os.environ["MODEL"],
         system_prompt=ARCHITECT_SYSTEM_PROMPT,
         output_type=DocumentUpdate,
+        retries=MAX_RETRIES,
     )
 
 
@@ -52,6 +54,7 @@ def _create_multi_agent() -> Agent[None, MultiDocumentUpdate]:
         os.environ["MODEL"],
         system_prompt=ARCHITECT_MULTI_SYSTEM_PROMPT,
         output_type=MultiDocumentUpdate,
+        retries=MAX_RETRIES,
     )
 
 
@@ -91,8 +94,6 @@ async def architect_node(state: PKMState, data_dir: Path | None = None) -> PKMSt
 
     # Add error feedback if this is a retry
     if state.get("last_edit_error"):
-        from ..config import MAX_RETRIES
-
         prompt += (
             f"\n\n## Previous Attempt Failed (retry {retry_count}/{MAX_RETRIES})\n"
         )

@@ -5,6 +5,7 @@ import os
 import logfire
 from pydantic_ai import Agent
 
+from ..config import MAX_RETRIES
 from ..prompts import PLANNER_SYSTEM_PROMPT
 from ..schemas import PKMState, UpdatePlan
 
@@ -27,6 +28,7 @@ def _create_agent() -> Agent[None, UpdatePlan]:
         os.environ["MODEL"],
         system_prompt=PLANNER_SYSTEM_PROMPT,
         output_type=UpdatePlan,
+        retries=MAX_RETRIES,
     )
 
 
