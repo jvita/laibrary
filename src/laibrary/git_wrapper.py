@@ -38,18 +38,74 @@ class IsolatedGitRepo:
                 f"No git repository found at {self.data_dir}. Run 'laibrary init' first."
             )
 
-    def add_and_commit(self, file_path: str, message: str) -> str:
-        """Stage a file and commit it.
+    def delete_file(self, file_path: str) -> None:
+        """Delete a file from the repository.
+
+        Args:
+            file_path: Path relative to repo root
+
+        Raises:
+            FileNotFoundError: If file doesn't exist
+        """
+        full_path = self.data_dir / file_path
+
+        if not full_path.exists():
+            raise FileNotFoundError(f"File not found: {file_path}")
+
+        full_path.unlink()
+
+    def add_and_commit(
+        self, file_path: str, message: str, is_deletion: bool = False
+    ) -> str:
+        """Stage and commit changes to a file.
 
         Args:
             file_path: Path relative to data_dir
             message: Commit message
+            is_deletion: If True, stages a deletion instead of addition
 
         Returns:
             The commit SHA
         """
         repo = self._get_repo()
-        repo.index.add([file_path])
+        if is_deletion:
+            repo.index.remove([file_path])
+        else:
+            repo.index.add([file_path])
+        commit = repo.index.commit(message)
+        return commit.hexsha
+
+    def add_and_commit_multiple(
+        self,
+        file_paths: list[str],
+        message: str,
+        deleted_files: list[str] | None = None,
+    ) -> str:
+        """Stage and commit changes to multiple files atomically.
+
+        Args:
+            file_paths: Paths relative to data_dir to add/modify
+            message: Commit message
+            deleted_files: Paths relative to data_dir that were deleted
+
+        Returns:
+            The commit SHA
+        """
+        repo = self._get_repo()
+
+        # Stage deletions first
+        if deleted_files:
+            repo.index.remove(deleted_files)
+
+        # Stage additions/modifications
+        if file_paths:
+            # Filter out deleted files from additions
+            files_to_add = [
+                f for f in file_paths if not deleted_files or f not in deleted_files
+            ]
+            if files_to_add:
+                repo.index.add(files_to_add)
+
         commit = repo.index.commit(message)
         return commit.hexsha
 

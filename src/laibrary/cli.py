@@ -7,8 +7,9 @@ import logfire
 import typer
 from dotenv import load_dotenv
 
+from .chat import run_chat_session
 from .git_wrapper import IsolatedGitRepo
-from .workflow import run_workflow
+from .workflow import run_workflow_with_state
 
 # Load environment variables from .env file
 load_dotenv()
@@ -63,7 +64,15 @@ Your notes will be automatically organized and integrated into your documents.
 
 
 @app.command()
-def note(content: str) -> None:
+def note(
+    content: str,
+    auto_confirm: bool = typer.Option(
+        False,
+        "--auto-confirm",
+        "-y",
+        help="Skip confirmation prompts for new project creation",
+    ),
+) -> None:
     """Process a note and update documents accordingly."""
     data_dir = get_data_dir()
 
@@ -73,7 +82,11 @@ def note(content: str) -> None:
 
     typer.echo("Processing note...")
 
-    result = asyncio.run(run_workflow(content, data_dir))
+    initial_state = {
+        "user_input": content,
+        "confirmation_mode": "auto" if auto_confirm else "interactive",
+    }
+    result = asyncio.run(run_workflow_with_state(initial_state, data_dir))
 
     if result.get("error"):
         typer.echo(f"Error: {result['error']}", err=True)
@@ -109,6 +122,18 @@ def status() -> None:
         content = repo.get_file_content(f)
         lines = len(content.splitlines()) if content else 0
         typer.echo(f"  {f} ({lines} lines)")
+
+
+@app.command()
+def chat() -> None:
+    """Start an interactive chat session."""
+    data_dir = get_data_dir()
+
+    if not (data_dir / ".git").exists():
+        typer.echo("Error: PKM not initialized. Run 'laibrary init' first.", err=True)
+        raise typer.Exit(1)
+
+    asyncio.run(run_chat_session(data_dir))
 
 
 def main() -> None:
