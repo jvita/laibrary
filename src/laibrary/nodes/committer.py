@@ -10,6 +10,31 @@ from ..schemas import DocumentUpdate, PKMState
 from .summaries import SummaryCache, generate_summary
 
 
+def _find_similar_lines(
+    content: str, search_block: str, max_suggestions: int = 5
+) -> list[str]:
+    """Find lines in content that are similar to the search block.
+
+    Helps provide actionable feedback when search_block doesn't match exactly.
+    """
+    # Get first few words from search block for fuzzy matching
+    search_words = search_block.strip().split()[:5]
+    if not search_words:
+        return []
+
+    lines = content.split("\n")
+    suggestions = []
+
+    for line_num, line in enumerate(lines, 1):
+        # Check if any search words appear in this line
+        if any(word.lower() in line.lower() for word in search_words):
+            suggestions.append(f"Line {line_num}: {line[:80]}")
+            if len(suggestions) >= max_suggestions:
+                break
+
+    return suggestions
+
+
 def _apply_edits(content: str, update: DocumentUpdate) -> str:
     """Apply all edits to content in memory.
 
@@ -22,8 +47,23 @@ def _apply_edits(content: str, update: DocumentUpdate) -> str:
             # Empty search block means append/create
             result = result + edit.replace_block
         elif edit.search_block not in result:
+            # Provide helpful context about what IS in the document
+            similar_lines = _find_similar_lines(result, edit.search_block)
+
+            error_msg = f"Edit {i + 1}: search_block not found in document"
+            if similar_lines:
+                error_msg += "\n\nSimilar lines found:\n" + "\n".join(similar_lines)
+                error_msg += "\n\nEnsure exact character-by-character match including whitespace, line breaks, and punctuation."
+            else:
+                # Show a preview of document structure
+                lines = result.split("\n")
+                preview_lines = [
+                    f"Line {i+1}: {line[:60]}" for i, line in enumerate(lines[:10])
+                ]
+                error_msg += "\n\nDocument starts with:\n" + "\n".join(preview_lines)
+
             raise EditApplicationError(
-                f"Edit {i + 1}: search_block not found in document",
+                error_msg,
                 update.target_file,
                 edit.search_block,
             )
@@ -298,14 +338,23 @@ async def _handle_multi_update(
         # Try to extract the failed search block for better retry context
         failed_search_block = None
         if failed_idx is not None and "search_block not found" in (error_msg or ""):
-            # Extract from error message or use first edit's search_block
-            try:
-                if updates[failed_idx].edits:
-                    # Find which edit failed (could parse error_msg for "Edit N:")
-                    # For now, just use the first edit as a hint
-                    failed_search_block = updates[failed_idx].edits[0].search_block
-            except (IndexError, AttributeError):
-                pass
+            # Parse error message to find which edit failed (e.g., "Edit 2:")
+            import re
+
+            edit_match = re.search(r"Edit (\d+):", error_msg or "")
+            if edit_match and updates[failed_idx].edits:
+                edit_num = int(edit_match.group(1)) - 1  # Convert to 0-indexed
+                try:
+                    if 0 <= edit_num < len(updates[failed_idx].edits):
+                        failed_search_block = (
+                            updates[failed_idx].edits[edit_num].search_block
+                        )
+                except (IndexError, AttributeError):
+                    pass
+
+            # Fallback: use first edit if we couldn't find the specific one
+            if failed_search_block is None and updates[failed_idx].edits:
+                failed_search_block = updates[failed_idx].edits[0].search_block
 
         return {
             **state,

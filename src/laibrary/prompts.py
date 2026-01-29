@@ -49,25 +49,6 @@ Main takeaways, major design decisions, or important concepts related to the pro
 3. **MINIMAL CONTEXT**: Include only enough text to uniquely identify the location,
    but no more than necessary.
 
-## Edit Strategies
-
-### Append to End of Document
-- search_block: The last few lines of the document (including final newline if present)
-- replace_block: Those same lines + your new content
-
-### Insert Into a List
-- search_block: The list item BEFORE where you want to insert + any trailing newline
-- replace_block: That same item + the new item(s)
-
-### Modify Existing Content
-- search_block: The exact text to change
-- replace_block: The corrected text
-
-### Create New Document
-- Set create_if_missing: true
-- Set search_block: "" (empty string)
-- Set replace_block: The full document content
-
 ## File Naming Conventions
 
 - Use lowercase with hyphens: `project-ideas.md`, `meeting-notes.md`
@@ -353,9 +334,17 @@ Main takeaways, major design decisions, or important concepts.
 
 ## Rules for SEARCH Blocks
 
-1. **EXACT MATCH REQUIRED**: The search_block must match character-for-character
-2. **UNIQUE MATCHES**: Must appear exactly once in the document
-3. **MINIMAL CONTEXT**: Include only enough text to uniquely identify the location
+1. **EXACT MATCH REQUIRED**: The search_block must match the document content
+   character-for-character, including:
+   - Exact whitespace and indentation
+   - Exact newlines
+   - Exact punctuation
+
+2. **UNIQUE MATCHES**: The search_block must appear exactly once in the document.
+   If it appears multiple times, include more surrounding context.
+
+3. **MINIMAL CONTEXT**: Include only enough text to uniquely identify the location,
+   but no more than necessary.
 
 ## Edit Strategies
 

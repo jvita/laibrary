@@ -6,7 +6,7 @@ from pathlib import Path
 import logfire
 from pydantic_ai import Agent
 
-from ..config import MAX_RETRIES
+from ..config import MAX_RETRIES, SELECTOR_SETTINGS
 from ..git_wrapper import IsolatedGitRepo
 from ..prompts import SELECTOR_SYSTEM_PROMPT
 from ..schemas import PKMState, SelectionResult
@@ -82,6 +82,7 @@ async def selector_node(state: PKMState, data_dir: Path | None = None) -> PKMSta
             system_prompt=SELECTOR_SYSTEM_PROMPT,
             output_type=SelectionResult,
             retries=MAX_RETRIES,
+            model_settings=SELECTOR_SETTINGS,
         )
         result = await agent.run(prompt)
         selection = result.output

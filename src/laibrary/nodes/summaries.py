@@ -112,12 +112,13 @@ async def generate_summary(content: str) -> str:
     Returns:
         Generated summary (1-2 sentences)
     """
-    from ..config import MAX_RETRIES
+    from ..config import MAX_RETRIES, SUMMARY_SETTINGS
 
     agent = Agent(
         os.environ["MODEL"],
         system_prompt=SUMMARY_SYSTEM_PROMPT,
         retries=MAX_RETRIES,
+        model_settings=SUMMARY_SETTINGS,
     )
 
     result = await agent.run(f"Summarize this document:\n\n{content}")

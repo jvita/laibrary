@@ -6,7 +6,7 @@ from pathlib import Path
 import logfire
 from pydantic_ai import Agent
 
-from ..config import MAX_RETRIES
+from ..config import ARCHITECT_SETTINGS, MAX_RETRIES
 from ..prompts import ARCHITECT_MULTI_SYSTEM_PROMPT, ARCHITECT_SYSTEM_PROMPT
 from ..schemas import DocumentUpdate, MultiDocumentUpdate, PKMState
 
@@ -45,6 +45,7 @@ def _create_agent() -> Agent[None, DocumentUpdate]:
         system_prompt=ARCHITECT_SYSTEM_PROMPT,
         output_type=DocumentUpdate,
         retries=MAX_RETRIES,
+        model_settings=ARCHITECT_SETTINGS,
     )
 
 
@@ -55,6 +56,7 @@ def _create_multi_agent() -> Agent[None, MultiDocumentUpdate]:
         system_prompt=ARCHITECT_MULTI_SYSTEM_PROMPT,
         output_type=MultiDocumentUpdate,
         retries=MAX_RETRIES,
+        model_settings=ARCHITECT_SETTINGS,
     )
 
 
