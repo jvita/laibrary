@@ -136,6 +136,36 @@ def chat() -> None:
     asyncio.run(run_chat_session(data_dir))
 
 
+@app.command(name="import")
+def import_notes(
+    path: Path = typer.Argument(..., help="Directory containing markdown files"),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        "-n",
+        help="Preview notes without processing",
+    ),
+) -> None:
+    """Import markdown notes in bulk."""
+    from .bulk_import.processor import process_bulk_import
+
+    data_dir = get_data_dir()
+
+    if not (data_dir / ".git").exists():
+        typer.echo("Error: PKM not initialized. Run 'laibrary init' first.", err=True)
+        raise typer.Exit(1)
+
+    if not path.exists():
+        typer.echo(f"Error: Path does not exist: {path}", err=True)
+        raise typer.Exit(1)
+
+    if not path.is_dir():
+        typer.echo(f"Error: Path is not a directory: {path}", err=True)
+        raise typer.Exit(1)
+
+    asyncio.run(process_bulk_import(path, data_dir, dry_run))
+
+
 def main() -> None:
     """Entry point for the CLI."""
     app()

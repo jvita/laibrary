@@ -22,7 +22,7 @@ class SummaryCache:
         """
         self.data_dir = data_dir
         self.cache_dir = data_dir / ".laibrary"
-        self.cache_file = self.cache_dir / "summaries.json"
+        self.cache_file = self.cache_dir / "catalog.json"
         self._cache: dict[str, dict] = {}
         self._load()
 
