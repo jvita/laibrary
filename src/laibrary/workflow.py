@@ -6,7 +6,7 @@ from pathlib import Path
 import logfire
 from langgraph.graph import END, START, StateGraph
 
-from . import MAX_RETRIES
+from .config import MAX_RETRIES
 from .nodes import (
     architect_node,
     committer_node,

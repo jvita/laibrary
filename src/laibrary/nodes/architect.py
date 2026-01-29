@@ -91,7 +91,7 @@ async def architect_node(state: PKMState, data_dir: Path | None = None) -> PKMSt
 
     # Add error feedback if this is a retry
     if state.get("last_edit_error"):
-        from .. import MAX_RETRIES
+        from ..config import MAX_RETRIES
 
         prompt += (
             f"\n\n## Previous Attempt Failed (retry {retry_count}/{MAX_RETRIES})\n"
