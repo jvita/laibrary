@@ -15,6 +15,46 @@ class ParsedNote:
     content_hash: str
 
 
+def parse_markdown_file(file_path: Path) -> ParsedNote:
+    """Parse a single markdown file.
+
+    Args:
+        file_path: Path to the .md file
+
+    Returns:
+        Parsed note
+    """
+    content = file_path.read_text(encoding="utf-8")
+    title = _extract_title(content, file_path.stem)
+    content_hash = hashlib.md5(content.encode()).hexdigest()
+
+    return ParsedNote(
+        path=file_path,
+        title=title,
+        content=content,
+        content_hash=content_hash,
+    )
+
+
+def parse_markdown_path(path: Path) -> list[ParsedNote]:
+    """Parse markdown files from a path (file or directory).
+
+    Args:
+        path: Path to a .md file or directory containing .md files
+
+    Returns:
+        List of parsed notes
+    """
+    if path.is_file():
+        return [parse_markdown_file(path)]
+
+    # Directory - parse all markdown files recursively
+    notes = []
+    for md_file in sorted(path.rglob("*.md")):
+        notes.append(parse_markdown_file(md_file))
+    return notes
+
+
 def parse_markdown_directory(directory: Path) -> list[ParsedNote]:
     """Parse all markdown files in a directory.
 
@@ -24,27 +64,7 @@ def parse_markdown_directory(directory: Path) -> list[ParsedNote]:
     Returns:
         List of parsed notes
     """
-    notes = []
-
-    for md_file in sorted(directory.rglob("*.md")):
-        content = md_file.read_text(encoding="utf-8")
-
-        # Extract title from first H1 or filename
-        title = _extract_title(content, md_file.stem)
-
-        # Hash for deduplication
-        content_hash = hashlib.md5(content.encode()).hexdigest()
-
-        notes.append(
-            ParsedNote(
-                path=md_file,
-                title=title,
-                content=content,
-                content_hash=content_hash,
-            )
-        )
-
-    return notes
+    return parse_markdown_path(directory)
 
 
 def _extract_title(content: str, fallback: str) -> str:

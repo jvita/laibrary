@@ -1,5 +1,6 @@
 """Bulk import processor - runs notes through existing workflow."""
 
+import re
 from pathlib import Path
 
 import typer
@@ -8,26 +9,55 @@ from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn
 
 from ..workflow import run_workflow_with_state
-from .parser import ParsedNote, deduplicate, parse_markdown_directory
+from .parser import ParsedNote, deduplicate, parse_markdown_path
+
+
+def _title_to_project_name(title: str) -> str:
+    """Convert a title to a valid project name.
+
+    Examples:
+        "My Project Idea" -> "my-project-idea"
+        "Web App v2.0" -> "web-app-v2-0"
+    """
+    # Convert to lowercase
+    name = title.lower()
+    # Replace spaces and underscores with hyphens
+    name = re.sub(r"[\s_]+", "-", name)
+    # Remove any characters that aren't alphanumeric or hyphen
+    name = re.sub(r"[^a-z0-9-]", "", name)
+    # Remove multiple consecutive hyphens
+    name = re.sub(r"-+", "-", name)
+    # Remove leading/trailing hyphens
+    name = name.strip("-")
+    # Limit length
+    if len(name) > 50:
+        name = name[:50].rstrip("-")
+    return name or "imported"
 
 
 async def process_bulk_import(
     import_path: Path,
     data_dir: Path,
     dry_run: bool = False,
+    target_project: str | None = None,
 ) -> None:
-    """Process a directory of markdown files through the PKM workflow.
+    """Process markdown file(s) through the PKM workflow.
 
     Args:
-        import_path: Directory containing markdown files to import
+        import_path: File or directory containing markdown files to import
         data_dir: PKM data directory
         dry_run: If True, preview without processing
+        target_project: If specified, all notes go to this project.
+                       Otherwise, each file becomes its own project.
     """
     console = Console()
 
     # 1. Parse files
-    console.print("[cyan]Scanning for markdown files...[/cyan]")
-    all_notes = parse_markdown_directory(import_path)
+    if import_path.is_file():
+        console.print(f"[cyan]Reading {import_path.name}...[/cyan]")
+    else:
+        console.print("[cyan]Scanning for markdown files...[/cyan]")
+    all_notes = parse_markdown_path(import_path)
 
     if not all_notes:
         console.print("[yellow]No markdown files found.[/yellow]")
@@ -42,10 +72,20 @@ async def process_bulk_import(
         console.print(f"[yellow]Skipping {len(duplicates)} exact duplicates[/yellow]")
 
     # 3. Preview
-    console.print(Panel("[bold]Notes to Import[/bold]", border_style="cyan"))
-
-    for i, note in enumerate(unique_notes[:20], 1):  # Show first 20
-        console.print(f"  {i}. {note.title}")
+    if target_project:
+        console.print(
+            Panel(
+                f"[bold]Importing to project: {target_project}[/bold]",
+                border_style="cyan",
+            )
+        )
+        for i, note in enumerate(unique_notes[:20], 1):
+            console.print(f"  {i}. {note.title}")
+    else:
+        console.print(Panel("[bold]Notes to Import[/bold]", border_style="cyan"))
+        for i, note in enumerate(unique_notes[:20], 1):
+            project_name = _title_to_project_name(note.title)
+            console.print(f"  {i}. {note.title} -> projects/{project_name}.md")
 
     if len(unique_notes) > 20:
         console.print(f"  ... and {len(unique_notes) - 20} more")
@@ -55,7 +95,12 @@ async def process_bulk_import(
         return
 
     # 4. Confirm
-    if not typer.confirm(f"\nProcess {len(unique_notes)} notes?", default=True):
+    if target_project:
+        confirm_msg = f"\nImport {len(unique_notes)} notes into '{target_project}'?"
+    else:
+        confirm_msg = f"\nCreate {len(unique_notes)} projects?"
+
+    if not typer.confirm(confirm_msg, default=True):
         console.print("[yellow]Import cancelled.[/yellow]")
         return
 
@@ -76,10 +121,19 @@ async def process_bulk_import(
         for note in unique_notes:
             progress.update(task, description=f"Processing: {note.title[:40]}...")
 
+            # Determine project name
+            if target_project:
+                project_name = target_project
+            else:
+                project_name = _title_to_project_name(note.title)
+
+            # Format as /project-name followed by the note content
+            user_input = f"/{project_name} {note.content}"
+
             try:
                 result = await run_workflow_with_state(
                     {
-                        "user_input": note.content,
+                        "user_input": user_input,
                         "confirmation_mode": "auto",  # Auto-confirm during bulk
                     },
                     data_dir,
@@ -105,6 +159,9 @@ async def process_bulk_import(
     console.print(f"  [blue]\u25cb[/blue] No changes needed: {len(skipped)}")
     console.print(f"  [yellow]\u25cb[/yellow] Skipped duplicates: {len(duplicates)}")
     console.print(f"  [red]\u2717[/red] Failed: {len(failures)}")
+
+    if target_project:
+        console.print(f"\n  Target: projects/{target_project}.md")
 
     if failures:
         console.print("\n[red]Failed notes:[/red]")

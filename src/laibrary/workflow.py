@@ -3,60 +3,34 @@
 from functools import partial
 from pathlib import Path
 
-import logfire
 from langgraph.graph import END, START, StateGraph
 
 from .nodes import (
     architect_node,
     committer_node,
-    confirmation_node,
     context_node,
     ingestion_node,
-    planner_node,
-    selector_node,
-    summaries_node,
 )
 from .schemas import PKMState
 
 
 def _should_continue(state: PKMState) -> str:
-    """Determine if workflow should continue or end due to error."""
+    """Determine if workflow should continue or end due to error/command."""
     if state.get("error"):
         return "end"
+
+    # Check for special commands that don't need further processing
+    command = state.get("command")
+    if command == "list":
+        return "end"
+
     return "continue"
-
-
-def _should_retry(state: PKMState) -> str:
-    """Determine if we should retry after committer failure."""
-    if state.get("committed"):
-        logfire.info("Committer succeeded")
-        return "end"
-
-    error = state.get("error")
-    if not error:
-        return "end"
-
-    # For now, don't retry - just end on error
-    # Could add retry logic for network/API failures in the future
-    logfire.error("Committer failed", error=error)
-    return "end"
-
-
-def _retry_prep(state: PKMState) -> PKMState:
-    """Prepare state for retrying the architect."""
-    retry_count = state.get("retry_count", 0)
-    logfire.info("Preparing retry", attempt=retry_count + 1)
-    return {
-        **state,
-        "error": None,  # Clear error so architect doesn't skip
-        "retry_count": retry_count + 1,
-        "document_update": None,  # Clear the failed update
-        "document_updates": None,  # Clear failed multi-updates
-    }
 
 
 def create_workflow(data_dir: Path | None = None) -> StateGraph:
     """Create the PKM workflow graph.
+
+    Simplified workflow: START → ingestion → context → architect → committer → END
 
     Args:
         data_dir: Path to the data directory. Defaults to 'data/'.
@@ -68,10 +42,8 @@ def create_workflow(data_dir: Path | None = None) -> StateGraph:
         data_dir = Path("data")
 
     # Create partial functions with data_dir bound
-    summaries_with_dir = partial(summaries_node, data_dir=data_dir)
-    selector_with_dir = partial(selector_node, data_dir=data_dir)
+    ingestion_with_dir = partial(ingestion_node, data_dir=data_dir)
     context_with_dir = partial(context_node, data_dir=data_dir)
-    confirmation_with_dir = partial(confirmation_node, data_dir=data_dir)
     architect_with_dir = partial(architect_node, data_dir=data_dir)
     committer_with_dir = partial(committer_node, data_dir=data_dir)
 
@@ -79,46 +51,20 @@ def create_workflow(data_dir: Path | None = None) -> StateGraph:
     graph = StateGraph(PKMState)
 
     # Add nodes
-    graph.add_node("ingestion", ingestion_node)
-    graph.add_node("summaries", summaries_with_dir)
-    graph.add_node("selector", selector_with_dir)
+    graph.add_node("ingestion", ingestion_with_dir)
     graph.add_node("context", context_with_dir)
-    graph.add_node("planner", planner_node)
-    graph.add_node("confirmation", confirmation_with_dir)
     graph.add_node("architect", architect_with_dir)
     graph.add_node("committer", committer_with_dir)
-    graph.add_node("retry_prep", _retry_prep)
 
-    # Add edges
-    # START -> ingestion -> summaries -> selector -> context -> planner -> confirmation -> architect -> committer -> END
+    # Add edges: START → ingestion → context → architect → committer → END
     graph.add_edge(START, "ingestion")
     graph.add_conditional_edges(
         "ingestion",
-        _should_continue,
-        {"continue": "summaries", "end": END},
-    )
-    graph.add_conditional_edges(
-        "summaries",
-        _should_continue,
-        {"continue": "selector", "end": END},
-    )
-    graph.add_conditional_edges(
-        "selector",
         _should_continue,
         {"continue": "context", "end": END},
     )
     graph.add_conditional_edges(
         "context",
-        _should_continue,
-        {"continue": "planner", "end": END},
-    )
-    graph.add_conditional_edges(
-        "planner",
-        _should_continue,
-        {"continue": "confirmation", "end": END},
-    )
-    graph.add_conditional_edges(
-        "confirmation",
         _should_continue,
         {"continue": "architect", "end": END},
     )
@@ -127,13 +73,7 @@ def create_workflow(data_dir: Path | None = None) -> StateGraph:
         _should_continue,
         {"continue": "committer", "end": END},
     )
-    # Committer can either succeed, fail fatally, or retry
-    graph.add_conditional_edges(
-        "committer",
-        _should_retry,
-        {"retry": "retry_prep", "end": END},
-    )
-    graph.add_edge("retry_prep", "architect")
+    graph.add_edge("committer", END)
 
     return graph.compile()
 
@@ -142,7 +82,7 @@ async def run_workflow(user_input: str, data_dir: Path | None = None) -> PKMStat
     """Run the PKM workflow with user input.
 
     Args:
-        user_input: The user's note to process
+        user_input: The user's note to process (should include /project prefix)
         data_dir: Path to the data directory. Defaults to 'data/'.
 
     Returns:

@@ -9,11 +9,9 @@ import logfire
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent
 
-from .config import MAX_RETRIES, QUERY_SETTINGS, ROUTER_SETTINGS, SELECTOR_SETTINGS
+from .config import MAX_RETRIES, QUERY_SETTINGS, ROUTER_SETTINGS
 from .git_wrapper import IsolatedGitRepo
-from .nodes.summaries import SummaryCache, generate_summary
-from .prompts import QUERY_SYSTEM_PROMPT, ROUTER_SYSTEM_PROMPT, SELECTOR_SYSTEM_PROMPT
-from .schemas import SelectionResult
+from .prompts import QUERY_SYSTEM_PROMPT, ROUTER_SYSTEM_PROMPT
 from .workflow import run_workflow_with_state
 
 
@@ -85,133 +83,27 @@ def _build_chat_context(history: list[ChatMessage], max_messages: int = 10) -> s
     return "\n".join(parts)
 
 
-def _load_documents(
-    data_dir: Path, selected_files: list[str] | None = None
-) -> dict[str, str]:
-    """Load markdown documents from the data directory.
-
-    Args:
-        data_dir: Path to the data directory
-        selected_files: If provided, only load these files. If None, load all.
-
-    Returns:
-        Dict mapping file paths to their content
-    """
+def _list_projects(data_dir: Path) -> list[str]:
+    """List available project names."""
     repo = IsolatedGitRepo(data_dir)
-    context_files: dict[str, str] = {}
-
-    if selected_files is not None:
-        # Load only selected files
-        for file_path in selected_files:
-            content = repo.get_file_content(file_path)
-            if content is not None:
-                context_files[file_path] = content
-    else:
-        # Load all markdown files
-        for file_path in repo.list_files("**/*.md"):
-            content = repo.get_file_content(file_path)
-            if content is not None:
-                context_files[file_path] = content
-
-    return context_files
+    projects = []
+    for file_path in repo.list_files("projects/*.md"):
+        name = file_path.replace("projects/", "").replace(".md", "")
+        projects.append(name)
+    return sorted(projects)
 
 
-async def _ensure_summaries(
-    data_dir: Path, documents: dict[str, str]
-) -> dict[str, str]:
-    """Ensure all documents have summaries, generating missing ones.
-
-    Args:
-        data_dir: Path to the data directory
-        documents: Dict mapping file paths to their content
-
-    Returns:
-        Dict mapping file paths to their summaries
-    """
-    cache = SummaryCache(data_dir)
-    summaries: dict[str, str] = {}
-
-    for file_path, content in documents.items():
-        # Try to get cached summary
-        summary = cache.get(file_path, content)
-        if summary is not None:
-            summaries[file_path] = summary
-        else:
-            # Generate new summary
-            try:
-                summary = await generate_summary(content)
-                cache.set(file_path, content, summary)
-                summaries[file_path] = summary
-            except Exception as e:
-                logfire.warn("Failed to generate summary", file=file_path, error=str(e))
-                # Use a fallback summary based on first line
-                first_line = content.split("\n")[0].strip()
-                if first_line.startswith("#"):
-                    first_line = first_line.lstrip("#").strip()
-                summaries[file_path] = (
-                    first_line[:100] if first_line else "Document content"
-                )
-
-    return summaries
-
-
-async def _select_documents(query: str, summaries: dict[str, str]) -> list[str] | None:
-    """Run selector to pick relevant documents for a query.
-
-    Args:
-        query: The user's query
-        summaries: Dict mapping file paths to their summaries
-
-    Returns:
-        List of selected file paths, or None to load all documents
-    """
-    if not summaries:
-        return None
-
-    # Build prompt with summaries
-    summary_parts = ["## Available Documents\n"]
-    for file_path, summary in summaries.items():
-        summary_parts.append(f"- **{file_path}**: {summary}")
-    summary_text = "\n".join(summary_parts)
-
-    prompt = f"{summary_text}\n\n## User Query\n{query}"
-
-    try:
-        agent = Agent(
-            os.environ["MODEL"],
-            system_prompt=SELECTOR_SYSTEM_PROMPT,
-            output_type=SelectionResult,
-            retries=MAX_RETRIES,
-            model_settings=SELECTOR_SETTINGS,
-        )
-        result = await agent.run(prompt)
-        selection = result.output
-
-        logfire.info(
-            "Selector decision for query",
-            selected_count=len(selection.selected_files),
-            reasoning=selection.reasoning,
-        )
-
-        # Empty selection means load all
-        if not selection.selected_files:
-            return None
-
-        return selection.selected_files
-
-    except Exception as e:
-        logfire.error("Selector failed for query", error=str(e))
-        return None
+def _load_project(data_dir: Path, project_name: str) -> str | None:
+    """Load a project document by name."""
+    repo = IsolatedGitRepo(data_dir)
+    file_path = f"projects/{project_name}.md"
+    return repo.get_file_content(file_path)
 
 
 async def _handle_query(
     user_message: str, data_dir: Path, target_hint: str | None = None
 ) -> str:
     """Handle a query intent by searching documents and answering the question.
-
-    Uses two-stage context loading:
-    1. Load summaries and select relevant documents
-    2. Load only selected documents for the query agent
 
     Args:
         user_message: The user's question
@@ -221,29 +113,17 @@ async def _handle_query(
     Returns:
         Natural language answer to the question
     """
-    # Stage 1: Load all documents to ensure summaries exist
-    all_documents = _load_documents(data_dir)
+    repo = IsolatedGitRepo(data_dir)
 
-    if not all_documents:
-        return "I don't have any documents in your knowledge base yet. Try adding some notes first!"
+    # Load all project documents for context
+    documents: dict[str, str] = {}
+    for file_path in repo.list_files("projects/*.md"):
+        content = repo.get_file_content(file_path)
+        if content is not None:
+            documents[file_path] = content
 
-    # Ensure summaries exist for all documents
-    summaries = await _ensure_summaries(data_dir, all_documents)
-
-    # Select relevant documents based on summaries
-    selected_files = await _select_documents(user_message, summaries)
-
-    # Stage 2: Load only selected documents (or all if selection returned None)
-    if selected_files is not None:
-        documents = _load_documents(data_dir, selected_files)
-        logfire.info(
-            "Query using selected documents",
-            total_docs=len(all_documents),
-            selected_docs=len(documents),
-        )
-    else:
-        documents = all_documents
-        logfire.info("Query using all documents", total_docs=len(documents))
+    if not documents:
+        return "I don't have any project documents yet. Create one with /use project-name and add some notes!"
 
     # Build context from documents
     doc_context_parts = ["# Your Knowledge Base\n"]
@@ -283,10 +163,22 @@ class ChatSession:
 
     data_dir: Path
     history: list[ChatMessage] = field(default_factory=list)
+    current_project: str | None = None  # Currently selected project name
+
+    def _project_exists(self, project_name: str) -> bool:
+        """Check if a project exists."""
+        repo = IsolatedGitRepo(self.data_dir)
+        return repo.file_exists(f"projects/{project_name}.md")
 
     @logfire.instrument("chat_message")
     async def send_message(self, user_message: str) -> dict:
         """Process a user message and return the response.
+
+        Commands:
+        - /list or /projects - List available projects
+        - /use <project> - Set current project for session
+        - /<project> <note> - Add note to specific project (and switch to it)
+        - Plain text - Add note to current project (if set) or route via intent
 
         Returns:
             Dict with keys:
@@ -297,9 +189,138 @@ class ChatSession:
         # Add user message to history
         self.history.append(ChatMessage(role=MessageRole.USER, content=user_message))
 
-        # Build context and route the message
-        context = _build_chat_context(self.history[:-1])  # Exclude current message
-        prompt = f"{context}\n\n## Current Message\n{user_message}"
+        stripped = user_message.strip()
+        lower = stripped.lower()
+
+        # Command: /list or /projects
+        if lower in ("/list", "/projects"):
+            projects = _list_projects(self.data_dir)
+            if projects:
+                response = "**Available projects:**\n" + "\n".join(
+                    f"- {p}" for p in projects
+                )
+                if self.current_project:
+                    response += f"\n\n*Current: {self.current_project}*"
+            else:
+                response = "No projects yet. Use `/use project-name` to create one."
+            self.history.append(
+                ChatMessage(role=MessageRole.ASSISTANT, content=response)
+            )
+            return {
+                "response": response,
+                "updated_docs": False,
+                "update_details": None,
+            }
+
+        # Command: /use <project>
+        if lower.startswith("/use "):
+            project_name = stripped[5:].strip()
+            if not project_name:
+                response = "Usage: /use project-name"
+            else:
+                self.current_project = project_name
+                if self._project_exists(project_name):
+                    response = f"Switched to project: **{project_name}**"
+                else:
+                    response = f"Set project to: **{project_name}** (will be created on first note)"
+            self.history.append(
+                ChatMessage(role=MessageRole.ASSISTANT, content=response)
+            )
+            return {
+                "response": response,
+                "updated_docs": False,
+                "update_details": None,
+            }
+
+        # Command: /<project> <note> - explicit project with note
+        if stripped.startswith("/") and " " in stripped:
+            # Parse /project-name note content
+            parts = stripped[1:].split(" ", 1)
+            project_name = parts[0]
+            note_content = parts[1] if len(parts) > 1 else ""
+
+            if note_content:
+                # Switch to this project and add note
+                self.current_project = project_name
+                return await self._add_note(note_content)
+
+        # Command: /<project> (no note) - just switch project
+        if stripped.startswith("/") and " " not in stripped:
+            project_name = stripped[1:]
+            if project_name:
+                self.current_project = project_name
+                if self._project_exists(project_name):
+                    response = f"Switched to project: **{project_name}**"
+                else:
+                    response = f"Set project to: **{project_name}** (will be created on first note)"
+                self.history.append(
+                    ChatMessage(role=MessageRole.ASSISTANT, content=response)
+                )
+                return {
+                    "response": response,
+                    "updated_docs": False,
+                    "update_details": None,
+                }
+
+        # If we have a current project, treat message as a note
+        if self.current_project:
+            return await self._add_note(stripped)
+
+        # No current project - route through intent classifier
+        return await self._route_message(stripped)
+
+    async def _add_note(self, note_content: str) -> dict:
+        """Add a note to the current project."""
+        if not self.current_project:
+            response = "No project selected. Use `/use project-name` first."
+            self.history.append(
+                ChatMessage(role=MessageRole.ASSISTANT, content=response)
+            )
+            return {
+                "response": response,
+                "updated_docs": False,
+                "update_details": None,
+            }
+
+        # Run through workflow
+        user_input = f"/{self.current_project} {note_content}"
+        initial_state = {
+            "user_input": user_input,
+            "confirmation_mode": "auto",  # Auto-confirm in chat mode
+        }
+        workflow_result = await run_workflow_with_state(initial_state, self.data_dir)
+
+        if workflow_result.get("error"):
+            error = workflow_result["error"]
+            logfire.error("Workflow failed", error=error)
+            response = f"Error: {error}"
+            update_details = None
+        elif workflow_result.get("committed"):
+            update = workflow_result.get("document_update")
+            if update:
+                update_details = {
+                    "file": update.target_file,
+                    "commit_message": update.commit_message,
+                }
+                response = f"Updated **{self.current_project}**"
+            else:
+                response = "Changes committed."
+                update_details = None
+        else:
+            response = "No changes were made."
+            update_details = None
+
+        self.history.append(ChatMessage(role=MessageRole.ASSISTANT, content=response))
+        return {
+            "response": response,
+            "updated_docs": workflow_result.get("committed", False),
+            "update_details": update_details,
+        }
+
+    async def _route_message(self, message: str) -> dict:
+        """Route a message through intent classification."""
+        context = _build_chat_context(self.history[:-1])
+        prompt = f"{context}\n\n## Current Message\n{message}"
 
         router = _create_router_agent()
 
@@ -326,17 +347,14 @@ class ChatSession:
 
         update_details = None
 
-        # Branch on intent
         match decision.intent:
             case Intent.CHAT:
-                # Simple conversation, no document interaction
                 response = decision.response
 
             case Intent.QUERY:
-                # Read from documents to answer question
                 try:
                     answer = await _handle_query(
-                        user_message, self.data_dir, decision.target_hint
+                        message, self.data_dir, decision.target_hint
                     )
                     response = answer
                 except Exception as e:
@@ -344,51 +362,18 @@ class ChatSession:
                     response = f"I encountered an error searching your documents: {e}"
 
             case Intent.UPDATE:
-                # Run the document update workflow with interactive confirmation
-                initial_state = {
-                    "user_input": user_message,
-                    "confirmation_mode": "interactive",
-                }
-                workflow_result = await run_workflow_with_state(
-                    initial_state, self.data_dir
-                )
-
-                if workflow_result.get("error"):
-                    logfire.error("Workflow failed", error=workflow_result["error"])
-                    response = f"{decision.response}\n\n(Note: I tried to save this but encountered an error: {workflow_result['error']})"
-                elif workflow_result.get("committed"):
-                    # Check for multi-document updates
-                    updates = workflow_result.get("document_updates")
-                    if updates:
-                        # Multiple files updated
-                        file_list = ", ".join([u.target_file for u in updates])
-                        commit_msg = updates[0].commit_message if updates else ""
-                        update_details = {
-                            "files": [u.target_file for u in updates],
-                            "commit_message": commit_msg,
-                        }
-                        response = f"{decision.response}\n\n[Modified: {file_list}]"
-                    else:
-                        # Single file update (backward compat)
-                        update = workflow_result.get("document_update")
-                        if update:
-                            update_details = {
-                                "file": update.target_file,
-                                "commit_message": update.commit_message,
-                            }
-                            response = f"{decision.response}\n\n[Modified: {update.target_file}]"
-                        else:
-                            response = decision.response
+                # Guide user to select a project first
+                projects = _list_projects(self.data_dir)
+                if projects:
+                    project_list = ", ".join(projects)
+                    response = f"{decision.response}\n\nTo save this, first select a project:\n`/use project-name`\n\nAvailable: {project_list}"
                 else:
-                    response = f"{decision.response}\n\n(Note: No changes were made to documents)"
+                    response = f"{decision.response}\n\nTo save this, first create a project:\n`/use project-name`"
 
-        # Add assistant response to history
         self.history.append(ChatMessage(role=MessageRole.ASSISTANT, content=response))
-
         return {
             "response": response,
-            "updated_docs": decision.intent == Intent.UPDATE
-            and (update_details is not None),
+            "updated_docs": False,
             "update_details": update_details,
         }
 
@@ -412,17 +397,29 @@ async def run_chat_session(data_dir: Path) -> None:
     console.print(
         Panel(
             "[bold green]Laibrary Chat[/bold green]\n\n"
-            "Chat with me and I'll help manage your knowledge base.\n"
-            "Share ideas, notes, or thoughts - I'll save the important stuff.\n\n"
-            "Commands: [bold]/quit[/bold] to exit, [bold]/clear[/bold] to clear history",
+            "Commands:\n"
+            "  [bold]/use project[/bold] - Select a project\n"
+            "  [bold]/list[/bold] - Show available projects\n"
+            "  [bold]/project note[/bold] - Add note to specific project\n"
+            "  [bold]/quit[/bold] - Exit\n"
+            "  [bold]/clear[/bold] - Clear history\n\n"
+            "Once a project is selected, just type your notes!",
             title="Welcome",
             border_style="green",
         )
     )
 
     while True:
+        # Show current project in prompt
+        if session.current_project:
+            prompt_prefix = f"[bold blue]({session.current_project})[/bold blue] "
+        else:
+            prompt_prefix = "[dim](no project)[/dim] "
+
         try:
-            user_input = console.input("\n[bold blue]You:[/bold blue] ").strip()
+            user_input = console.input(
+                f"\n{prompt_prefix}[bold blue]>[/bold blue] "
+            ).strip()
         except (EOFError, KeyboardInterrupt):
             console.print("\n[dim]Goodbye![/dim]")
             break
@@ -443,7 +440,6 @@ async def run_chat_session(data_dir: Path) -> None:
             result = await session.send_message(user_input)
 
         console.print()
-        console.print("[bold green]Assistant:[/bold green]")
         console.print(Markdown(result["response"]))
 
         if result["update_details"]:

@@ -13,16 +13,6 @@ ARCHITECT_SETTINGS: ModelSettings = {
     "max_tokens": 8192,  # Room for full document content
 }
 
-PLANNER_SETTINGS: ModelSettings = {
-    "temperature": 0.1,  # Very low for structured planning
-    "max_tokens": 512,  # Concise plans
-}
-
-SELECTOR_SETTINGS: ModelSettings = {
-    "temperature": 0.2,  # Low for consistent selection
-    "max_tokens": 256,  # Brief selection results
-}
-
 ROUTER_SETTINGS: ModelSettings = {
     "temperature": 0.0,  # Deterministic routing decisions
     "max_tokens": 64,  # Very brief intent classification
@@ -31,9 +21,4 @@ ROUTER_SETTINGS: ModelSettings = {
 QUERY_SETTINGS: ModelSettings = {
     "temperature": 0.3,  # Slightly higher for natural responses
     "max_tokens": 1024,  # Room for detailed answers
-}
-
-SUMMARY_SETTINGS: ModelSettings = {
-    "temperature": 0.4,  # Allow some creativity in summaries
-    "max_tokens": 128,  # Concise summaries
 }

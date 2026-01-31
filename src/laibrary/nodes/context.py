@@ -1,4 +1,4 @@
-"""Context node - gathers existing documents for the Architect."""
+"""Context node - loads the target project document."""
 
 from pathlib import Path
 
@@ -7,12 +7,14 @@ from ..schemas import PKMState
 
 
 def context_node(state: PKMState, data_dir: Path | None = None) -> PKMState:
-    """Scan data/ directory and read markdown files.
+    """Load the target project document into context.
 
-    Provides the Architect with context of existing documents.
-    Respects selected_files from the selector stage:
-    - If selected_files is a list: load only those files
-    - If selected_files is None: load all files (original behavior)
+    Args:
+        state: Current workflow state (must have target_project set)
+        data_dir: Path to data directory
+
+    Returns:
+        Updated state with context_files containing the project document
     """
     if state.get("error"):
         return state
@@ -20,22 +22,17 @@ def context_node(state: PKMState, data_dir: Path | None = None) -> PKMState:
     if data_dir is None:
         data_dir = Path("data")
 
+    target_project = state.get("target_project")
+    if not target_project:
+        return {**state, "error": "No target project specified"}
+
     repo = IsolatedGitRepo(data_dir)
-
     context_files: dict[str, str] = {}
-    selected_files = state.get("selected_files")
 
-    if selected_files is not None:
-        # Load only selected files
-        for file_path in selected_files:
-            content = repo.get_file_content(file_path)
-            if content is not None:
-                context_files[file_path] = content
-    else:
-        # Load all markdown files (original behavior)
-        for file_path in repo.list_files("**/*.md"):
-            content = repo.get_file_content(file_path)
-            if content is not None:
-                context_files[file_path] = content
+    # Load the target project file
+    content = repo.get_file_content(target_project)
+    if content is not None:
+        context_files[target_project] = content
+    # If file doesn't exist, that's OK - architect will create it
 
     return {**state, "context_files": context_files}
