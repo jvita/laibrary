@@ -4,79 +4,14 @@ from pathlib import Path
 
 import logfire
 
-from ..exceptions import EditApplicationError
 from ..git_wrapper import IsolatedGitRepo
 from ..schemas import DocumentUpdate, PKMState
 from .summaries import SummaryCache, generate_summary
 
 
-def _find_similar_lines(
-    content: str, search_block: str, max_suggestions: int = 5
-) -> list[str]:
-    """Find lines in content that are similar to the search block.
-
-    Helps provide actionable feedback when search_block doesn't match exactly.
-    """
-    # Get first few words from search block for fuzzy matching
-    search_words = search_block.strip().split()[:5]
-    if not search_words:
-        return []
-
-    lines = content.split("\n")
-    suggestions = []
-
-    for line_num, line in enumerate(lines, 1):
-        # Check if any search words appear in this line
-        if any(word.lower() in line.lower() for word in search_words):
-            suggestions.append(f"Line {line_num}: {line[:80]}")
-            if len(suggestions) >= max_suggestions:
-                break
-
-    return suggestions
-
-
-def _apply_edits(content: str, update: DocumentUpdate) -> str:
-    """Apply all edits to content in memory.
-
-    Raises EditApplicationError if any edit fails.
-    """
-    result = content
-
-    for i, edit in enumerate(update.edits):
-        if edit.search_block == "":
-            # Empty search block means append/create
-            result = result + edit.replace_block
-        elif edit.search_block not in result:
-            # Provide helpful context about what IS in the document
-            similar_lines = _find_similar_lines(result, edit.search_block)
-
-            error_msg = f"Edit {i + 1}: search_block not found in document"
-            if similar_lines:
-                error_msg += "\n\nSimilar lines found:\n" + "\n".join(similar_lines)
-                error_msg += "\n\nEnsure exact character-by-character match including whitespace, line breaks, and punctuation."
-            else:
-                # Show a preview of document structure
-                lines = result.split("\n")
-                preview_lines = [
-                    f"Line {i+1}: {line[:60]}" for i, line in enumerate(lines[:10])
-                ]
-                error_msg += "\n\nDocument starts with:\n" + "\n".join(preview_lines)
-
-            raise EditApplicationError(
-                error_msg,
-                update.target_file,
-                edit.search_block,
-            )
-        elif result.count(edit.search_block) > 1:
-            raise EditApplicationError(
-                f"Edit {i + 1}: search_block appears multiple times ({result.count(edit.search_block)} occurrences)",
-                update.target_file,
-                edit.search_block,
-            )
-        else:
-            result = result.replace(edit.search_block, edit.replace_block, 1)
-
-    return result
+def _get_new_content(update: DocumentUpdate) -> str:
+    """Get new content from update."""
+    return update.full_content
 
 
 async def _commit_multi(
@@ -87,10 +22,10 @@ async def _commit_multi(
 ) -> tuple[bool, str | None, int | None]:
     """Apply multiple document updates atomically.
 
-    All edits are validated in memory before any writes occur.
+    All updates are validated in memory before any writes occur.
     Returns (success, error_message, failed_file_index).
     """
-    # Step 1: Validate ALL edits in memory
+    # Step 1: Validate ALL updates in memory
     validated_contents: dict[str, str] = {}
     files_to_delete: list[str] = []
 
@@ -106,7 +41,7 @@ async def _commit_multi(
                     )
                 files_to_delete.append(update.target_file)
             else:
-                # Read existing content or start empty
+                # Check if file exists
                 existing_content = repo.get_file_content(update.target_file)
 
                 if existing_content is None:
@@ -125,14 +60,10 @@ async def _commit_multi(
                             idx,
                         )
 
-                    existing_content = ""
-
-                # Apply edits in memory
-                new_content = _apply_edits(existing_content, update)
+                # Get new content
+                new_content = _get_new_content(update)
                 validated_contents[update.target_file] = new_content
 
-        except EditApplicationError as e:
-            return (False, str(e), idx)
         except Exception as e:
             return (
                 False,
@@ -208,9 +139,8 @@ async def _handle_single_update(
 ) -> PKMState:
     """Handle a single document update (backward compatibility)."""
     logfire.info(
-        "Applying edits",
+        "Applying update",
         target_file=update.target_file,
-        edit_count=len(update.edits),
     )
 
     if data_dir is None:
@@ -243,7 +173,7 @@ async def _handle_single_update(
             logfire.error(error_msg, exc_info=True)
             return {**state, "error": error_msg}
 
-    # Read existing content or start empty
+    # Check if file exists
     existing_content = repo.get_file_content(update.target_file)
 
     if existing_content is None:
@@ -259,23 +189,16 @@ async def _handle_single_update(
             logfire.error(error_msg)
             return {**state, "error": error_msg}
 
-        existing_content = ""
-
-    # Apply all edits in memory
+    # Get new content
     try:
-        new_content = _apply_edits(existing_content, update)
-    except EditApplicationError as e:
+        new_content = _get_new_content(update)
+    except Exception as e:
         # Store error details for potential retry
-        logfire.warn(
-            "Edit application failed",
-            error=str(e),
-            search_block_preview=e.search_block[:100] if e.search_block else None,
-        )
+        logfire.warn("Content retrieval failed", error=str(e))
         return {
             **state,
             "error": str(e),
             "last_edit_error": str(e),
-            "failed_search_block": e.search_block,
         }
 
     # Write and commit
@@ -335,31 +258,9 @@ async def _handle_multi_update(
             failed_file_index=failed_idx,
         )
 
-        # Try to extract the failed search block for better retry context
-        failed_search_block = None
-        if failed_idx is not None and "search_block not found" in (error_msg or ""):
-            # Parse error message to find which edit failed (e.g., "Edit 2:")
-            import re
-
-            edit_match = re.search(r"Edit (\d+):", error_msg or "")
-            if edit_match and updates[failed_idx].edits:
-                edit_num = int(edit_match.group(1)) - 1  # Convert to 0-indexed
-                try:
-                    if 0 <= edit_num < len(updates[failed_idx].edits):
-                        failed_search_block = (
-                            updates[failed_idx].edits[edit_num].search_block
-                        )
-                except (IndexError, AttributeError):
-                    pass
-
-            # Fallback: use first edit if we couldn't find the specific one
-            if failed_search_block is None and updates[failed_idx].edits:
-                failed_search_block = updates[failed_idx].edits[0].search_block
-
         return {
             **state,
             "error": error_msg,
             "last_edit_error": error_msg,
-            "failed_search_block": failed_search_block,
             "retry_file_index": failed_idx,
         }

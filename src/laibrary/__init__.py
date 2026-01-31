@@ -5,7 +5,7 @@ from .cli import app as cli_app
 from .config import MAX_RETRIES
 from .exceptions import EditApplicationError
 from .git_wrapper import IsolatedGitRepo
-from .schemas import DocumentEdit, DocumentUpdate, PKMState
+from .schemas import DocumentUpdate, PKMState
 from .workflow import create_workflow, run_workflow, run_workflow_with_state
 
 __all__ = [
@@ -18,7 +18,6 @@ __all__ = [
     "ChatMessage",
     "MessageRole",
     "IsolatedGitRepo",
-    "DocumentEdit",
     "DocumentUpdate",
     "PKMState",
     "EditApplicationError",

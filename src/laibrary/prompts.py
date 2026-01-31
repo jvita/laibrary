@@ -7,7 +7,7 @@ user notes into an evolving collection of Markdown documents.
 ## Your Task
 
 Given a user's note and the current state of their documents, produce a single
-DocumentUpdate that surgically modifies the appropriate document.
+DocumentUpdate containing the complete updated content for the appropriate document.
 
 ## Design Strategy
 The documents that you are managing are meant to give a user a holistic overview of a
@@ -35,19 +35,12 @@ Main takeaways, major design decisions, or important concepts related to the pro
 - [x] Completed task 1
 ```
 
-## Rules for SEARCH Blocks
+## Output Format
 
-1. **EXACT MATCH REQUIRED**: The search_block must match the document content
-   character-for-character, including:
-   - Exact whitespace and indentation
-   - Exact newlines
-   - Exact punctuation
-
-2. **UNIQUE MATCHES**: The search_block must appear exactly once in the document.
-   If it appears multiple times, include more surrounding context.
-
-3. **MINIMAL CONTEXT**: Include only enough text to uniquely identify the location,
-   but no more than necessary.
+Output the complete updated document in the `full_content` field. This should include:
+- All existing content that should be preserved
+- Your new additions or modifications
+- Proper formatting and organization
 
 ## File Naming Conventions
 
@@ -64,7 +57,7 @@ You can delete files by setting `delete_file: true` in the DocumentUpdate.
 When deleting:
 - Set `target_file` to the file to delete
 - Set `delete_file: true`
-- Set `edits: []` (empty list - edits are ignored for deletions)
+- Set `full_content: ""` (empty string - content is ignored for deletions)
 - Write a clear commit message like "Delete obsolete project notes"
 
 Use deletion when:
@@ -73,7 +66,7 @@ Use deletion when:
 - Content should be consolidated (delete old file after moving content elsewhere)
 
 Do NOT delete files:
-- To "clean up" content (use edits to remove sections instead)
+- To "clean up" content (update the full_content to remove sections instead)
 - Unless explicitly requested or clearly appropriate
 - When the user might want to keep the file for reference
 
@@ -89,7 +82,7 @@ Write clear, conventional commit messages:
 
 - Prefer updating existing documents over creating new ones when the content fits
 - If no existing document is appropriate, create a new one with a logical name
-- Always ensure your search_block will match exactly - when in doubt, include more context
+- Output the complete document content, not incremental edits
 """
 
 
@@ -204,7 +197,7 @@ Assistant: "I don't see any documents about machine learning in your knowledge b
 SELECTOR_SYSTEM_PROMPT = """\
 Select documents relevant to this request.
 
-You will be given a list of document summaries and a user request. Your job is to
+You will be given the documents and a user request. Your job is to
 identify which documents are needed to fulfill the request.
 
 ## Guidelines
@@ -295,7 +288,7 @@ user notes into an evolving collection of Markdown documents.
 ## Your Task
 
 Given a user's note, the current state of their documents, and an UpdatePlan,
-produce a MultiDocumentUpdate containing edits for ALL files in the plan.
+produce a MultiDocumentUpdate containing complete updated content for ALL files in the plan.
 
 ## Multi-Document Strategy
 
@@ -306,7 +299,7 @@ Your job is to generate the actual DocumentUpdate for each file in the plan.
 - Generate updates for ALL files listed in the plan
 - Each update should follow the file_plan's description
 - Ensure the commit_message matches the plan's commit_message
-- All edits will be applied atomically (all or nothing)
+- All updates will be applied atomically (all or nothing)
 
 ## Design Strategy
 
@@ -332,38 +325,12 @@ Main takeaways, major design decisions, or important concepts.
 - [x] Completed task 1
 ```
 
-## Rules for SEARCH Blocks
+## Output Format
 
-1. **EXACT MATCH REQUIRED**: The search_block must match the document content
-   character-for-character, including:
-   - Exact whitespace and indentation
-   - Exact newlines
-   - Exact punctuation
-
-2. **UNIQUE MATCHES**: The search_block must appear exactly once in the document.
-   If it appears multiple times, include more surrounding context.
-
-3. **MINIMAL CONTEXT**: Include only enough text to uniquely identify the location,
-   but no more than necessary.
-
-## Edit Strategies
-
-### Append to End of Document
-- search_block: Last few lines of the document
-- replace_block: Those same lines + your new content
-
-### Insert Into a List
-- search_block: The list item BEFORE where you want to insert
-- replace_block: That same item + the new item(s)
-
-### Modify Existing Content
-- search_block: The exact text to change
-- replace_block: The corrected text
-
-### Create New Document
-- Set create_if_missing: true
-- Set search_block: "" (empty string)
-- Set replace_block: The full document content
+For each file in the plan, output the complete updated document in the `full_content` field. This should include:
+- All existing content that should be preserved
+- Your new additions or modifications
+- Proper formatting and organization
 
 ## File Naming Conventions
 
@@ -378,7 +345,7 @@ Set `delete_file: true` for files that should be removed.
 When deleting:
 - Set `target_file` to the file to delete
 - Set `delete_file: true`
-- Set `edits: []` (empty list)
+- Set `full_content: ""` (empty string - content is ignored for deletions)
 - Only delete when explicitly appropriate
 
 ## Output Format
@@ -389,8 +356,7 @@ Return a MultiDocumentUpdate with:
 
 ## Important
 
-- Always ensure search_blocks will match exactly
 - Generate updates for ALL files in the plan
-- When in doubt, include more context in search blocks
+- Output the complete document content for each file, not incremental edits
 - Cross-reference between documents when appropriate (e.g., "See webapp.md for details")
 """

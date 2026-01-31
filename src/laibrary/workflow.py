@@ -6,7 +6,6 @@ from pathlib import Path
 import logfire
 from langgraph.graph import END, START, StateGraph
 
-from .config import MAX_RETRIES
 from .nodes import (
     architect_node,
     committer_node,
@@ -37,22 +36,9 @@ def _should_retry(state: PKMState) -> str:
     if not error:
         return "end"
 
-    # Check if it's a retryable edit error
-    if (
-        "search_block not found" in error
-        or "search_block appears multiple times" in error
-    ):
-        retry_count = state.get("retry_count", 0)
-        if retry_count < MAX_RETRIES:
-            logfire.warn(
-                "Edit failed, will retry",
-                retry_count=retry_count + 1,
-                max_retries=MAX_RETRIES,
-                error=error,
-            )
-            return "retry"
-        logfire.error("Max retries exceeded", error=error)
-
+    # For now, don't retry - just end on error
+    # Could add retry logic for network/API failures in the future
+    logfire.error("Committer failed", error=error)
     return "end"
 
 

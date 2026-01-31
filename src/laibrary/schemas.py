@@ -5,31 +5,17 @@ from typing import Literal, TypedDict
 from pydantic import BaseModel, Field
 
 
-class DocumentEdit(BaseModel):
-    """A single search/replace edit operation."""
-
-    search_block: str = Field(
-        description="Exact text to find in the document. Must match character-for-character."
-    )
-    replace_block: str = Field(
-        description="Text to replace the search_block with. Can be empty to delete."
-    )
-
-
 class DocumentUpdate(BaseModel):
     """Complete update specification for a single document."""
 
     target_file: str = Field(
         description="Relative path from data/ directory (e.g., 'notes/ideas.md')"
     )
-    edits: list[DocumentEdit] = Field(
-        default_factory=list,
-        description="List of search/replace edits to apply in order",
-    )
+    full_content: str = Field(description="Complete new content for the document")
     commit_message: str = Field(description="Git commit message describing the change")
     create_if_missing: bool = Field(
         default=False,
-        description="If True, create the file if it doesn't exist. For new files, use empty search_block.",
+        description="If True, create the file if it doesn't exist.",
     )
     delete_file: bool = Field(
         default=False,
@@ -103,7 +89,6 @@ class PKMState(TypedDict, total=False):
     # Retry logic fields
     retry_count: int
     last_edit_error: str | None  # Error message from failed edit attempt
-    failed_search_block: str | None  # The search_block that failed to match
     retry_file_index: int | None  # Track which file failed in multi-update
     # Two-stage context loading fields
     summaries: dict[str, str]  # {filepath: summary}

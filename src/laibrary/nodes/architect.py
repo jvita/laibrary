@@ -100,11 +100,9 @@ async def architect_node(state: PKMState, data_dir: Path | None = None) -> PKMSt
             f"\n\n## Previous Attempt Failed (retry {retry_count}/{MAX_RETRIES})\n"
         )
         prompt += f"Error: {state['last_edit_error']}\n"
-        if state.get("failed_search_block"):
-            prompt += f"\nThe search_block that failed to match:\n```\n{state['failed_search_block']}\n```\n"
         if state.get("retry_file_index") is not None:
             prompt += f"\nThe error occurred in file index {state['retry_file_index']} ({update_plan.file_plans[state['retry_file_index']].target_file if update_plan else 'unknown'})\n"
-        prompt += "\nPlease generate a corrected edit. Ensure the search_block matches the document EXACTLY."
+        prompt += "\nPlease generate a corrected update."
 
     # Choose the appropriate agent
     if is_multi:

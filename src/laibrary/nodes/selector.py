@@ -50,30 +50,36 @@ def summaries_node(state: PKMState, data_dir: Path | None = None) -> PKMState:
 async def selector_node(state: PKMState, data_dir: Path | None = None) -> PKMState:
     """Run selector agent to pick relevant documents.
 
-    Uses summaries from state to decide which documents are relevant to
+    Uses full document content to decide which documents are relevant to
     the user's request. Falls back to loading all documents if:
-    - No summaries are available
+    - No documents are available
     - Selector returns empty list
     - Selector fails
     """
     if state.get("error"):
         return state
 
-    summaries = state.get("summaries", {})
+    if data_dir is None:
+        data_dir = Path("data")
+
+    repo = IsolatedGitRepo(data_dir)
     user_input = state.get("user_input", "")
 
-    # Fallback: no summaries available, load all docs
-    if not summaries:
-        logfire.info("No summaries available, will load all documents")
-        return {**state, "selected_files": None}
+    # Build prompt with full document content
+    doc_parts = ["## Available Documents\n"]
+    available_files = list(repo.list_files("**/*.md"))
 
-    # Build prompt with summaries
-    summary_parts = ["## Available Documents\n"]
-    for file_path, summary in summaries.items():
-        summary_parts.append(f"- **{file_path}**: {summary}")
-    summary_text = "\n".join(summary_parts)
+    if not available_files:
+        logfire.info("No documents available, will proceed with empty context")
+        return {**state, "selected_files": []}
 
-    prompt = f"{summary_text}\n\n## User Request\n{user_input}"
+    for file_path in available_files:
+        content = repo.get_file_content(file_path)
+        if content:
+            doc_parts.append(f"### {file_path}\n```markdown\n{content}\n```\n")
+
+    docs_text = "\n".join(doc_parts)
+    prompt = f"{docs_text}\n\n## User Request\n{user_input}"
 
     # Run selector agent
     try:

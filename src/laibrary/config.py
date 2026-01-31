@@ -9,8 +9,8 @@ MAX_RETRIES = 3
 # Using temperature-based control for determinism (don't use top_p with temperature)
 
 ARCHITECT_SETTINGS: ModelSettings = {
-    "temperature": 0.0,  # Deterministic for exact search/replace matching
-    "max_tokens": 2048,  # Prevent rambling and schema drift
+    "temperature": 0.0,  # Deterministic output
+    "max_tokens": 8192,  # Room for full document content
 }
 
 PLANNER_SETTINGS: ModelSettings = {
