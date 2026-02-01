@@ -8,7 +8,14 @@ if TYPE_CHECKING:
     from .schemas import SectionEdit
 
 # Canonical section order
-SECTION_ORDER = ["Description", "Current Status", "To Do", "Notes"]
+SECTION_ORDER = [
+    "Description",
+    "Current Status",
+    "To Do",
+    "Brainstorming",
+    "Summary",
+    "Notes",
+]
 
 
 def parse_document(content: str) -> tuple[str, dict[str, str]]:

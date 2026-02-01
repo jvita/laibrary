@@ -3,6 +3,7 @@
 import asyncio
 import os
 from dataclasses import dataclass, field
+from difflib import get_close_matches
 from enum import Enum
 from pathlib import Path
 
@@ -99,6 +100,64 @@ def _load_project(data_dir: Path, project_name: str) -> str | None:
     repo = IsolatedGitRepo(data_dir)
     file_path = f"projects/{project_name}.md"
     return repo.get_file_content(file_path)
+
+
+def _is_query_intent(message: str) -> bool:
+    """Check if message appears to be a query using heuristics with fuzzy matching.
+
+    Handles typos by using fuzzy string matching on the first word.
+    """
+    lower = message.lower().strip()
+
+    # Check for question mark
+    if lower.endswith("?"):
+        return True
+
+    # Extract first word
+    first_word = lower.split()[0] if lower.split() else ""
+
+    # Query keywords to match against
+    query_starters = [
+        "what",
+        "when",
+        "where",
+        "who",
+        "why",
+        "how",
+        "show",
+        "tell",
+        "list",
+        "display",
+        "get",
+        "find",
+        "search",
+        "check",
+        "whats",
+        "what's",
+        "wheres",
+        "where's",
+        "whos",
+        "who's",
+        "hows",
+        "how's",
+    ]
+
+    # Exact match
+    if first_word in query_starters:
+        return True
+
+    # Handle multi-word query starters (e.g., "show me", "tell me")
+    first_two_words = " ".join(lower.split()[:2]) if len(lower.split()) >= 2 else ""
+    if first_two_words in ["show me", "tell me"]:
+        return True
+
+    # Fuzzy match for typos (allow 1-2 character difference)
+    # Use cutoff of 0.7 to be reasonably strict but allow common typos
+    close_matches = get_close_matches(first_word, query_starters, n=1, cutoff=0.7)
+    if close_matches:
+        return True
+
+    return False
 
 
 async def _handle_query(
@@ -263,9 +322,14 @@ class ChatSession:
                     "update_details": None,
                 }
 
-        # If we have a current project, treat message as a note
+        # If we have a current project, check if it's a query first
         if self.current_project:
-            return await self._add_note(stripped)
+            if _is_query_intent(stripped):
+                # Handle as query with project context
+                return await self._handle_query_with_project(stripped)
+            else:
+                # Handle as note/update
+                return await self._add_note(stripped)
 
         # No current project - route through intent classifier
         return await self._route_message(stripped)
@@ -316,6 +380,24 @@ class ChatSession:
             "response": response,
             "updated_docs": workflow_result.get("committed", False),
             "update_details": update_details,
+        }
+
+    async def _handle_query_with_project(self, message: str) -> dict:
+        """Handle a query when a project is selected."""
+        target_hint = f"{self.current_project} project"
+
+        try:
+            answer = await _handle_query(message, self.data_dir, target_hint)
+            response = answer
+        except Exception as e:
+            logfire.error("Query handling failed", error=str(e))
+            response = f"I encountered an error: {e}"
+
+        self.history.append(ChatMessage(role=MessageRole.ASSISTANT, content=response))
+        return {
+            "response": response,
+            "updated_docs": False,
+            "update_details": None,
         }
 
     async def _route_message(self, message: str) -> dict:

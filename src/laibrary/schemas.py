@@ -8,9 +8,9 @@ from pydantic import BaseModel, Field
 class SectionEdit(BaseModel):
     """Edit to a single section of a document."""
 
-    section: Literal["Description", "Current Status", "To Do", "Notes"] = Field(
-        description="Which section to edit"
-    )
+    section: Literal[
+        "Description", "Current Status", "To Do", "Brainstorming", "Summary", "Notes"
+    ] = Field(description="Which section to edit")
     content: str = Field(description="Full new content for this section")
     remove: bool = Field(
         default=False, description="True to remove this section entirely"

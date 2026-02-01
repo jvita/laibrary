@@ -25,10 +25,28 @@ Task list using markdown checkboxes.
 - New tasks go at the top of the list
 - Keep completed tasks for history (or remove old ones periodically)
 
+**When to update To Do:**
+- User mentions action items: "I need to...", "TODO:", "Remember to...", "Task:"
+- User states intentions: "I should...", "I will...", "Plan to..."
+- User identifies problems: "Fix...", "Debug...", "Investigate..."
+- User requests features: "Add...", "Implement...", "Create..."
+- User mentions deadlines or commitments
+- User marks tasks as done: "Completed...", "Finished...", "Done with..."
+
+### Brainstorming (Optional)
+A dumping ground for random ideas, possibilities, and creative thoughts.
+- No strict organization required - capture ideas freely
+- Great for "what if" scenarios and exploratory thinking
+- Ideas can be revisited later for development into concrete tasks
+- When adding to Brainstorming, append new content at the bottom
+- Keep it messy - this is for idea generation, not polished thoughts
+
 ### Notes (Optional)
-Design decisions, meeting notes, reminders, brainstorming.
-- Typically append-only (add new content at the end)
-- Use timestamps or headers for organization
+Design decisions, meeting notes, reminders, and structured reflections.
+- Organize with date headers: ### YYYY-MM-DD
+- Date logs must be in REVERSE CHRONOLOGICAL ORDER (newest date first)
+- Each date should appear only once
+- When adding to Notes, prepend new content at the top
 - Capture context that might be useful later
 
 ## Editing Rules
@@ -38,6 +56,7 @@ Design decisions, meeting notes, reminders, brainstorming.
 3. For each section, provide the complete new content
 4. Set `remove: true` to delete a section entirely
 5. Sections not in your output remain unchanged
+6. **IMPORTANT**: Always check if the user's note contains action items that should be added to the To Do section
 
 ## Output Format
 
@@ -71,6 +90,41 @@ Example: Removing a section
     {"section": "To Do", "remove": true}
   ],
   "commit_message": "chore: remove completed todo list"
+}
+```
+
+Example: Detecting action items
+User note: "I should investigate why the database queries are slow"
+```json
+{
+  "section_edits": [
+    {"section": "To Do", "content": "- [ ] Investigate slow database queries\n- [ ] Existing task"},
+    {"section": "Notes", "content": "### 2024-01-15\nNoticed database performance issues during testing."}
+  ],
+  "commit_message": "feat: add task to investigate DB performance"
+}
+```
+
+Example: Marking task complete
+User note: "Finished implementing the JWT authentication"
+```json
+{
+  "section_edits": [
+    {"section": "Current Status", "content": "Completed JWT authentication. Starting refresh token logic."},
+    {"section": "To Do", "content": "- [x] Implement JWT authentication\n- [ ] Add refresh token support"}
+  ],
+  "commit_message": "update: mark JWT auth as complete"
+}
+```
+
+Example: Adding brainstorming ideas
+User note: "What if we could let users customize the theme colors? Maybe support plugins?"
+```json
+{
+  "section_edits": [
+    {"section": "Brainstorming", "content": "Existing ideas...\n\n- Custom theme colors per user\n- Plugin system for extensibility\n- What about a marketplace for plugins?"}
+  ],
+  "commit_message": "brainstorm: theme customization and plugin ideas"
 }
 ```
 
