@@ -14,8 +14,8 @@ from .workflow import run_workflow_with_state
 # Load environment variables from .env file
 load_dotenv()
 
-# Configure logfire
-logfire.configure()
+# Configure logfire (disable console output to avoid cluttering chat)
+logfire.configure(console=False)
 logfire.instrument_pydantic_ai()
 
 app = typer.Typer(

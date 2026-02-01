@@ -17,6 +17,7 @@ dependencies = [
     # CLI
     "typer>=0.12.0",
     "rich>=13.0",
+    "prompt-toolkit>=3.0.0",
     # Version control
     "gitpython>=3.1",
 ]
