@@ -14,6 +14,7 @@ from pydantic_ai import Agent
 from .config import MAX_RETRIES, QUERY_SETTINGS, ROUTER_SETTINGS
 from .git_wrapper import IsolatedGitRepo
 from .prompts import QUERY_SYSTEM_PROMPT, ROUTER_SYSTEM_PROMPT
+from .session_manager import SessionManager
 from .workflow import run_workflow_with_state
 
 
@@ -182,13 +183,27 @@ async def _handle_query(
         if content is not None:
             documents[file_path] = content
 
-    if not documents:
+    # Also load session documents for cross-project connections
+    session_documents: dict[str, str] = {}
+    for file_path in repo.list_files("sessions/*.md"):
+        content = repo.get_file_content(file_path)
+        if content is not None:
+            session_documents[file_path] = content
+
+    if not documents and not session_documents:
         return "I don't have any project documents yet. Create one with /use project-name and add some notes!"
 
     # Build context from documents
     doc_context_parts = ["# Your Knowledge Base\n"]
     for file_path, content in documents.items():
         doc_context_parts.append(f"\n## Document: {file_path}\n\n{content}\n")
+
+    # Add session documents
+    if session_documents:
+        doc_context_parts.append("\n# Chat Session History\n")
+        for file_path, content in session_documents.items():
+            doc_context_parts.append(f"\n## Session: {file_path}\n\n{content}\n")
+
     doc_context = "\n".join(doc_context_parts)
 
     # Build the query prompt
@@ -224,11 +239,22 @@ class ChatSession:
     data_dir: Path
     history: list[ChatMessage] = field(default_factory=list)
     current_project: str | None = None  # Currently selected project name
+    session_manager: SessionManager | None = field(default=None)
+
+    def __post_init__(self) -> None:
+        """Initialize session manager."""
+        if self.session_manager is None:
+            self.session_manager = SessionManager(data_dir=self.data_dir)
 
     def _project_exists(self, project_name: str) -> bool:
         """Check if a project exists."""
         repo = IsolatedGitRepo(self.data_dir)
         return repo.file_exists(f"projects/{project_name}.md")
+
+    def _record_assistant_message(self, content: str) -> None:
+        """Record an assistant message to the session transcript."""
+        if self.session_manager:
+            self.session_manager.record_message("assistant", content)
 
     @logfire.instrument("chat_message")
     async def send_message(self, user_message: str) -> dict:
@@ -246,8 +272,10 @@ class ChatSession:
                 - updated_docs: bool - Whether documents were updated
                 - update_details: dict | None - Details about the update if any
         """
-        # Add user message to history
+        # Add user message to history and transcript
         self.history.append(ChatMessage(role=MessageRole.USER, content=user_message))
+        if self.session_manager:
+            self.session_manager.record_message("user", user_message)
 
         stripped = user_message.strip()
         lower = stripped.lower()
@@ -266,6 +294,7 @@ class ChatSession:
             self.history.append(
                 ChatMessage(role=MessageRole.ASSISTANT, content=response)
             )
+            self._record_assistant_message(response)
             return {
                 "response": response,
                 "updated_docs": False,
@@ -286,6 +315,7 @@ class ChatSession:
             self.history.append(
                 ChatMessage(role=MessageRole.ASSISTANT, content=response)
             )
+            self._record_assistant_message(response)
             return {
                 "response": response,
                 "updated_docs": False,
@@ -316,6 +346,7 @@ class ChatSession:
                 self.history.append(
                     ChatMessage(role=MessageRole.ASSISTANT, content=response)
                 )
+                self._record_assistant_message(response)
                 return {
                     "response": response,
                     "updated_docs": False,
@@ -341,17 +372,24 @@ class ChatSession:
             self.history.append(
                 ChatMessage(role=MessageRole.ASSISTANT, content=response)
             )
+            self._record_assistant_message(response)
             return {
                 "response": response,
                 "updated_docs": False,
                 "update_details": None,
             }
 
-        # Run through workflow
+        # Run through workflow with session_id for bidirectional linking
         user_input = f"/{self.current_project} {note_content}"
+        session_id = (
+            self.session_manager.get_current_session_id()
+            if self.session_manager
+            else None
+        )
         initial_state = {
             "user_input": user_input,
             "confirmation_mode": "auto",  # Auto-confirm in chat mode
+            "session_id": session_id,
         }
         workflow_result = await run_workflow_with_state(initial_state, self.data_dir)
 
@@ -368,6 +406,9 @@ class ChatSession:
                     "commit_message": update.commit_message,
                 }
                 response = f"Updated **{self.current_project}**"
+                # Record project touch for session document
+                if self.session_manager and self.current_project:
+                    self.session_manager.record_project_touch(self.current_project)
             else:
                 response = "Changes committed."
                 update_details = None
@@ -376,6 +417,7 @@ class ChatSession:
             update_details = None
 
         self.history.append(ChatMessage(role=MessageRole.ASSISTANT, content=response))
+        self._record_assistant_message(response)
         return {
             "response": response,
             "updated_docs": workflow_result.get("committed", False),
@@ -394,6 +436,7 @@ class ChatSession:
             response = f"I encountered an error: {e}"
 
         self.history.append(ChatMessage(role=MessageRole.ASSISTANT, content=response))
+        self._record_assistant_message(response)
         return {
             "response": response,
             "updated_docs": False,
@@ -416,6 +459,7 @@ class ChatSession:
             self.history.append(
                 ChatMessage(role=MessageRole.ASSISTANT, content=error_response)
             )
+            self._record_assistant_message(error_response)
             return {
                 "response": error_response,
                 "updated_docs": False,
@@ -454,6 +498,7 @@ class ChatSession:
                     response = f"{decision.response}\n\nTo save this, first create a project:\n`/use project-name`"
 
         self.history.append(ChatMessage(role=MessageRole.ASSISTANT, content=response))
+        self._record_assistant_message(response)
         return {
             "response": response,
             "updated_docs": False,
@@ -463,6 +508,16 @@ class ChatSession:
     def clear_history(self) -> None:
         """Clear the chat history."""
         self.history.clear()
+
+    async def end_session(self) -> str | None:
+        """End the current session and persist to disk.
+
+        Returns:
+            Path to the session file, or None if session was empty.
+        """
+        if self.session_manager:
+            return await self.session_manager.end_session()
+        return None
 
 
 async def _display_completed_messages(
@@ -617,7 +672,11 @@ async def run_chat_session(data_dir: Path) -> None:
                     )
                 user_input = user_input.strip()
             except (EOFError, KeyboardInterrupt):
-                console.print("\n[dim]Goodbye![/dim]")
+                # End session on interrupt
+                session_path = await session.end_session()
+                if session_path:
+                    console.print(f"\n[dim]Session saved to {session_path}[/dim]")
+                console.print("[dim]Goodbye![/dim]")
                 break
 
             if not user_input:
@@ -625,6 +684,10 @@ async def run_chat_session(data_dir: Path) -> None:
 
             # Handle special commands immediately (not queued)
             if user_input.lower() == "/quit":
+                # End session and persist before exiting
+                session_path = await session.end_session()
+                if session_path:
+                    console.print(f"[dim]Session saved to {session_path}[/dim]")
                 console.print("[dim]Goodbye![/dim]")
                 break
 
@@ -633,9 +696,13 @@ async def run_chat_session(data_dir: Path) -> None:
                 continue
 
             elif user_input.lower() == "/clear":
+                # End current session and start a new one
+                session_path = await session.end_session()
+                if session_path:
+                    console.print(f"[dim]Session saved to {session_path}[/dim]")
                 session.clear_history()
                 displayed_messages.clear()
-                console.print("[dim]Chat history cleared.[/dim]")
+                console.print("[dim]Chat history cleared. New session started.[/dim]")
                 continue
 
             elif user_input.lower() in ("/list", "/projects"):

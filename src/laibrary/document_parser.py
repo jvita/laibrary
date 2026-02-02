@@ -15,6 +15,7 @@ SECTION_ORDER = [
     "Brainstorming",
     "Summary",
     "Notes",
+    "Session History",  # Always last - managed by Python, not LLM
 ]
 
 

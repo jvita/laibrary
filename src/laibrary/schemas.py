@@ -9,7 +9,13 @@ class SectionEdit(BaseModel):
     """Edit to a single section of a document."""
 
     section: Literal[
-        "Description", "Current Status", "To Do", "Brainstorming", "Summary", "Notes"
+        "Description",
+        "Current Status",
+        "To Do",
+        "Brainstorming",
+        "Summary",
+        "Notes",
+        "Session History",  # Managed by Python, not LLM
     ] = Field(description="Which section to edit")
     content: str = Field(description="Full new content for this section")
     remove: bool = Field(
@@ -50,3 +56,6 @@ class PKMState(TypedDict, total=False):
     # Special commands
     command: Literal["list", "note"] | None  # Parsed command type
     note_content: str | None  # Note content after stripping /project prefix
+
+    # Session tracking
+    session_id: str | None  # Current session ID for bidirectional linking

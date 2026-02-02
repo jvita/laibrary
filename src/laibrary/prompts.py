@@ -142,6 +142,7 @@ Write clear, conventional commit messages:
 - Provide complete content for each section (not incremental edits)
 - Preserve existing content when adding to a section (especially Notes)
 - The target_file is already determined - just provide section_edits
+- **NEVER edit the Session History section** - it is managed automatically by the system
 """
 
 
