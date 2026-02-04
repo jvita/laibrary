@@ -3,11 +3,11 @@ name = "laibrary"
 version = "0.1.0"
 description = "An AI-curated library of your thoughts and ideas"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.11"
 dependencies = [
     # Core
     "langgraph>=1.0.7",
-    "pydantic-ai>=1.47.0",
+    "pydantic-ai>=1.47.0,<1.50.0",
     "logfire>=3.0.0",
     "python-dotenv>=1.0.0",
     # Graph RAG
@@ -31,7 +31,7 @@ build-backend = "uv_build"
 
 [tool.ruff]
 line-length = 88
-target-version = "py312"
+target-version = "py311"
 
 [tool.ruff.lint]
 # E/W: Errors/Warnings, F: Pyflakes, I: Isort, B: Bugbear, N: PEP8-Naming, D: Docstrings, UP: Unused imports and variables
