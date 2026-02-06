@@ -139,6 +139,16 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
 
             # Check for immediate commands that don't need queueing
             stripped = user_message.strip().lower()
+
+            if stripped == "/clear":
+                async with _lock:
+                    await session.end_session()
+                    session.clear_history()
+                    if session.session_manager:
+                        session.session_manager.start_session()
+                await websocket.send_json({"type": "cleared"})
+                continue
+
             if (
                 stripped in ("/list", "/projects")
                 or stripped.startswith("/use ")
@@ -199,6 +209,15 @@ async def api_message(request) -> JSONResponse:
 
         # Check for immediate commands
         stripped = user_message.strip().lower()
+
+        if stripped == "/clear":
+            async with _lock:
+                await session.end_session()
+                session.clear_history()
+                if session.session_manager:
+                    session.session_manager.start_session()
+            return JSONResponse({"type": "cleared"})
+
         if (
             stripped in ("/list", "/projects")
             or stripped.startswith("/use ")

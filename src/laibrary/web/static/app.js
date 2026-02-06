@@ -32,6 +32,7 @@ class LaibraryChat {
             { cmd: '/projects', hint: 'Show available projects' },
             { cmd: '/use', hint: 'Select a project', suffix: ' ' },
             { cmd: '/read', hint: 'Print project document', suffix: ' ' },
+            { cmd: '/clear', hint: 'Clear chat history' },
         ];
         this.projectNames = [];
 
@@ -215,12 +216,28 @@ class LaibraryChat {
                 this.updatePendingIndicator();
                 break;
 
+            case 'cleared':
+                // Chat history cleared
+                this.setLoading(false);
+                this.clearMessages();
+                break;
+
             case 'error':
                 // General error
                 this.setLoading(false);
                 this.addMessage(data.error, 'error');
                 break;
         }
+    }
+
+    clearMessages() {
+        // Remove all message elements from the DOM
+        const messages = this.elements.messages.querySelectorAll('.message');
+        messages.forEach(el => el.remove());
+        // Reset tracking state
+        this.pendingMessages.clear();
+        this.processedMessageIds.clear();
+        this.lastSeenMessageId = 0;
     }
 
     async handleSubmit(e) {
@@ -345,13 +362,6 @@ class LaibraryChat {
             const cmdName = item.cmd.slice(1); // remove leading "/"
             if (cmdName.startsWith(lower)) {
                 suggestions.push(item);
-            }
-        }
-
-        // Match project names as /<project>
-        for (const name of this.projectNames) {
-            if (name.toLowerCase().startsWith(lower)) {
-                suggestions.push({ cmd: `/${name}`, hint: `Switch to ${name}` });
             }
         }
 
