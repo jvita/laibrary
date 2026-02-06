@@ -169,6 +169,55 @@ def chat() -> None:
     asyncio.run(run_chat_session(data_dir))
 
 
+@app.command()
+def serve(
+    host: str = typer.Option("0.0.0.0", "--host", "-h", help="Host to bind to"),
+    port: int = typer.Option(8080, "--port", "-p", help="Port to bind to"),
+    ssl_certfile: Path = typer.Option(
+        None,
+        "--ssl-certfile",
+        envvar="SSL_CERTFILE",
+        help="SSL certificate file (e.g. from tailscale cert)",
+    ),
+    ssl_keyfile: Path = typer.Option(
+        None,
+        "--ssl-keyfile",
+        envvar="SSL_KEYFILE",
+        help="SSL key file (e.g. from tailscale cert)",
+    ),
+) -> None:
+    """Start the web server for PWA access."""
+    import uvicorn
+
+    from .web import create_app
+
+    data_dir = get_data_dir()
+
+    if not (data_dir / ".git").exists():
+        typer.echo("Error: PKM not initialized. Run 'laibrary init' first.", err=True)
+        raise typer.Exit(1)
+
+    if bool(ssl_certfile) != bool(ssl_keyfile):
+        typer.echo(
+            "Error: --ssl-certfile and --ssl-keyfile must be used together.", err=True
+        )
+        raise typer.Exit(1)
+
+    scheme = "https" if ssl_certfile else "http"
+    typer.echo(f"Starting Laibrary web server at {scheme}://{host}:{port}")
+    typer.echo("Press Ctrl+C to stop")
+
+    app_instance = create_app(data_dir)
+    uvicorn.run(
+        app_instance,
+        host=host,
+        port=port,
+        log_level="info",
+        ssl_certfile=str(ssl_certfile) if ssl_certfile else None,
+        ssl_keyfile=str(ssl_keyfile) if ssl_keyfile else None,
+    )
+
+
 @app.command(name="import")
 def import_notes(
     path: Path = typer.Argument(..., help="File or directory to import"),

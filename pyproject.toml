@@ -20,6 +20,9 @@ dependencies = [
     "prompt-toolkit>=3.0.0",
     # Version control
     "gitpython>=3.1",
+    # Web server (PWA)
+    "starlette>=0.36.0",
+    "uvicorn[standard]>=0.27.0",
 ]
 
 [project.scripts]
@@ -56,6 +59,7 @@ dev = [
     "mkdocs>=1.6.1",
     "mkdocs-material>=9.7.1",
     "mkdocstrings[python]>=1.0.0",
+    "pillow>=12.1.0",
     "pre-commit>=4.5.1",
     "pytest>=8.0.0",
     "pytest-cov>=6.0.0",

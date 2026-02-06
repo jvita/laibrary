@@ -263,6 +263,7 @@ class ChatSession:
         Commands:
         - /list or /projects - List available projects
         - /use <project> - Set current project for session
+        - /read [project] - Print project document (defaults to current)
         - /<project> <note> - Add note to specific project (and switch to it)
         - Plain text - Add note to current project (if set) or route via intent
 
@@ -312,6 +313,51 @@ class ChatSession:
                     response = f"Switched to project: **{project_name}**"
                 else:
                     response = f"Set project to: **{project_name}** (will be created on first note)"
+            self.history.append(
+                ChatMessage(role=MessageRole.ASSISTANT, content=response)
+            )
+            self._record_assistant_message(response)
+            return {
+                "response": response,
+                "updated_docs": False,
+                "update_details": None,
+            }
+
+        # Command: /read [project] - print project document
+        if lower == "/read" or lower.startswith("/read "):
+            if lower == "/read":
+                project_name = self.current_project
+                if not project_name:
+                    response = "No project selected. Use `/read project-name` or `/use project-name` first."
+                    self.history.append(
+                        ChatMessage(role=MessageRole.ASSISTANT, content=response)
+                    )
+                    self._record_assistant_message(response)
+                    return {
+                        "response": response,
+                        "updated_docs": False,
+                        "update_details": None,
+                    }
+            else:
+                project_name = stripped[6:].strip()
+                if not project_name:
+                    response = "Usage: `/read project-name`"
+                    self.history.append(
+                        ChatMessage(role=MessageRole.ASSISTANT, content=response)
+                    )
+                    self._record_assistant_message(response)
+                    return {
+                        "response": response,
+                        "updated_docs": False,
+                        "update_details": None,
+                    }
+
+            content = _load_project(self.data_dir, project_name)
+            if content is None:
+                response = f"Project **{project_name}** not found."
+            else:
+                response = content
+
             self.history.append(
                 ChatMessage(role=MessageRole.ASSISTANT, content=response)
             )
@@ -627,6 +673,7 @@ async def run_chat_session(data_dir: Path) -> None:
             "Commands:\n"
             "  [bold]/use project[/bold] - Select a project\n"
             "  [bold]/list[/bold] - Show available projects\n"
+            "  [bold]/read [project][/bold] - Print project document\n"
             "  [bold]/project note[/bold] - Add note to specific project\n"
             "  [bold]/status[/bold] - Show queue status\n"
             "  [bold]/quit[/bold] - Exit\n"
@@ -714,6 +761,16 @@ async def run_chat_session(data_dir: Path) -> None:
                         console.print(f"  - {project_name}")
                 else:
                     console.print("[dim]No projects found.[/dim]")
+                continue
+
+            elif user_input.lower() == "/read" or user_input.lower().startswith(
+                "/read "
+            ):
+                # Print project document immediately
+                result = await session.send_message(user_input)
+                from rich.markdown import Markdown
+
+                console.print(Markdown(result["response"]))
                 continue
 
             elif user_input.lower().startswith("/use "):

@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="theme-color" content="#1a1a2e">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Laibrary">
+    <title>Laibrary</title>
+    <link rel="manifest" href="/manifest.json">
+    <link rel="apple-touch-icon" href="/icons/icon-192.png">
+    <link rel="stylesheet" href="/style.css?v=5">
+</head>
+<body>
+    <div id="app">
+        <header>
+            <h1>Laibrary</h1>
+            <select id="project-select" aria-label="Select project">
+                <option value="" disabled selected>Select project...</option>
+                <option value="__new__">+ New project</option>
+            </select>
+            <div id="connection-status" class="status"></div>
+        </header>
+
+        <main id="messages">
+            <div class="welcome-message">
+                <p>Welcome to Laibrary Chat</p>
+                <p class="hint">Select a project to start adding notes</p>
+                <div class="welcome-actions">
+                    <button type="button" id="btn-view-projects" class="action-btn">View Projects</button>
+                    <button type="button" id="btn-create-project" class="action-btn action-btn-primary">Create Project</button>
+                </div>
+            </div>
+        </main>
+
+        <form id="chat-form">
+            <div id="slash-autocomplete" class="slash-autocomplete hidden"></div>
+            <input
+                type="text"
+                id="message-input"
+                placeholder="Type a message..."
+                autocomplete="off"
+                autocapitalize="sentences"
+            >
+            <button type="submit" id="send-btn">
+                <svg viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
+                </svg>
+            </button>
+        </form>
+    </div>
+
+    <script src="/marked.min.js?v=5"></script>
+    <script src="/app.js?v=5"></script>
+    <script>
+        // Unregister old service workers to ensure fresh files
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.getRegistrations().then(registrations => {
+                registrations.forEach(reg => reg.unregister());
+            }).then(() => {
+                navigator.serviceWorker.register('/sw.js')
+                    .then(reg => console.log('SW registered'))
+                    .catch(err => console.log('SW registration failed:', err));
+            });
+        }
+    </script>
+</body>
+</html>

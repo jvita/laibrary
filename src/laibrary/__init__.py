@@ -6,6 +6,7 @@ from .config import MAX_RETRIES
 from .exceptions import EditApplicationError
 from .git_wrapper import IsolatedGitRepo
 from .schemas import DocumentUpdate, PKMState
+from .web import create_app as create_web_app
 from .workflow import create_workflow, run_workflow, run_workflow_with_state
 
 __all__ = [
@@ -22,4 +23,5 @@ __all__ = [
     "PKMState",
     "EditApplicationError",
     "MAX_RETRIES",
+    "create_web_app",
 ]

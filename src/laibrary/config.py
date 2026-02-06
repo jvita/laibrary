@@ -9,7 +9,7 @@ MAX_RETRIES = 3
 # Using temperature-based control for determinism (don't use top_p with temperature)
 
 ARCHITECT_SETTINGS: ModelSettings = {
-    "temperature": 0.0,  # Deterministic output
+    "temperature": 0.3,  # Deterministic output
     "max_tokens": 8192,  # Room for full document content
 }
 
