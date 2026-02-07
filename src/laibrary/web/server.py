@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import time
 from pathlib import Path
 from weakref import WeakSet
 
@@ -50,56 +51,68 @@ async def _notify_clients():
         if _queue_manager is None:
             continue
 
-        # Check for newly completed/failed messages
-        notified_ids = []
-        for msg_id, msg in list(_queue_manager.messages.items()):
-            if msg.status not in (MessageStatus.COMPLETED, MessageStatus.FAILED):
-                continue
+        try:
+            now = time.time()
+            cleanup_ids = []
 
-            # Notify all connected clients that haven't seen this message
-            all_notified = True
-            for ws in list(_connected_clients):
-                ws_id = id(ws)
-                last_seen = _last_notified.get(ws_id, 0)
+            # Check for newly completed/failed messages
+            for msg_id, msg in list(_queue_manager.messages.items()):
+                if msg.status not in (MessageStatus.COMPLETED, MessageStatus.FAILED):
+                    continue
 
-                if msg_id > last_seen:
-                    try:
-                        if msg.status == MessageStatus.COMPLETED:
-                            await ws.send_json(
-                                {
-                                    "type": "completed",
-                                    "message_id": msg_id,
-                                    "response": msg.result["response"],
-                                    "updated_docs": msg.result.get(
-                                        "updated_docs", False
-                                    ),
-                                    "update_details": msg.result.get("update_details"),
-                                    "current_project": _session.current_project
-                                    if _session
-                                    else None,
-                                }
-                            )
-                        else:
-                            await ws.send_json(
-                                {
-                                    "type": "failed",
-                                    "message_id": msg_id,
-                                    "error": msg.error,
-                                }
-                            )
-                        _last_notified[ws_id] = msg_id
-                    except Exception:
-                        # Client disconnected, will be cleaned up
-                        all_notified = False
-                        pass
-                # else: already notified this client
+                # Notify all connected clients that haven't seen this message
+                clients = list(_connected_clients)
+                all_notified = True
+                for ws in clients:
+                    ws_id = id(ws)
+                    last_seen = _last_notified.get(ws_id, 0)
 
-            if all_notified:
-                notified_ids.append(msg_id)
+                    if msg_id > last_seen:
+                        try:
+                            if msg.status == MessageStatus.COMPLETED:
+                                await ws.send_json(
+                                    {
+                                        "type": "completed",
+                                        "message_id": msg_id,
+                                        "response": msg.result["response"],
+                                        "updated_docs": msg.result.get(
+                                            "updated_docs", False
+                                        ),
+                                        "update_details": msg.result.get(
+                                            "update_details"
+                                        ),
+                                        "current_project": _session.current_project
+                                        if _session
+                                        else None,
+                                    }
+                                )
+                            else:
+                                await ws.send_json(
+                                    {
+                                        "type": "failed",
+                                        "message_id": msg_id,
+                                        "error": msg.error,
+                                    }
+                                )
+                            _last_notified[ws_id] = msg_id
+                        except Exception:
+                            # Client disconnected, will be cleaned up
+                            all_notified = False
+                    # else: already notified this client
 
-        # Remove fully-notified messages so they aren't re-sent on reconnect
-        for msg_id in notified_ids:
-            _queue_manager.messages.pop(msg_id, None)
+                # Only clean up if at least one client was actually notified,
+                # or if the message has been completed for over 60 seconds
+                # (fallback to prevent memory leaks when no clients connect)
+                timed_out = msg.completed_at and (now - msg.completed_at > 60)
+                if (all_notified and len(clients) > 0) or timed_out:
+                    cleanup_ids.append(msg_id)
+
+            for msg_id in cleanup_ids:
+                _queue_manager.messages.pop(msg_id, None)
+
+        except Exception:
+            # Prevent the notifier task from dying on unexpected errors
+            pass
 
 
 async def websocket_endpoint(websocket: WebSocket) -> None:

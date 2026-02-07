@@ -13,6 +13,15 @@ A brief 1-2 sentence overview of the project.
 - Keep concise and high-level
 - Update when project scope changes significantly
 
+### Instructions (Optional)
+Project-specific instructions written by the user that tell you how to manage
+this document. Read and follow these instructions carefully.
+- Follow these instructions when processing all notes for this project
+- These instructions take precedence over general guidelines when they conflict
+- If the section is absent, follow the default rules
+- **Do NOT modify this section** unless the user explicitly asks you to change,
+  update, or add project instructions
+
 ### Current Status (Optional)
 What is currently being worked on.
 - Describe recent progress and immediate focus
@@ -143,6 +152,7 @@ Write clear, conventional commit messages:
 - Preserve existing content when adding to a section (especially Notes)
 - The target_file is already determined - just provide section_edits
 - **NEVER edit the Session History section** - it is managed automatically by the system
+- **Do NOT modify the Instructions section** unless the user explicitly asks you to update project instructions
 """
 
 

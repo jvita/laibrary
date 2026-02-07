@@ -10,6 +10,7 @@ class SectionEdit(BaseModel):
 
     section: Literal[
         "Description",
+        "Instructions",
         "Current Status",
         "To Do",
         "Brainstorming",

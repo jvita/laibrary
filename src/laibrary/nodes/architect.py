@@ -13,10 +13,25 @@ from ..schemas import DocumentUpdate, PKMState
 
 def _build_context_message(target_file: str, context_files: dict[str, str]) -> str:
     """Build a message containing the current document content."""
+    from ..document_parser import parse_document
+
     content = context_files.get(target_file)
 
     if content:
-        return f"## Current Document: {target_file}\n\n```markdown\n{content}\n```"
+        msg = f"## Current Document: {target_file}\n\n```markdown\n{content}\n```"
+
+        # Extract and emphasize project-specific instructions
+        _, sections = parse_document(content)
+        instructions = sections.get("Instructions")
+        if instructions:
+            msg += (
+                "\n\n## Project-Specific Instructions\n\n"
+                "The following instructions were written by the user for this "
+                "project. Follow them carefully:\n\n"
+                f"{instructions}"
+            )
+
+        return msg
     else:
         # Extract project name from path for new document
         project_name = target_file.replace("projects/", "").replace(".md", "")

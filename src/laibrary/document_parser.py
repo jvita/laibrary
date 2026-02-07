@@ -10,6 +10,7 @@ if TYPE_CHECKING:
 # Canonical section order
 SECTION_ORDER = [
     "Description",
+    "Instructions",
     "Current Status",
     "To Do",
     "Brainstorming",

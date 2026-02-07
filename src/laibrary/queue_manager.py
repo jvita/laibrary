@@ -1,6 +1,7 @@
 """Message queue manager for handling sequential message processing."""
 
 import asyncio
+import time
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -25,6 +26,7 @@ class QueuedMessage:
     status: MessageStatus
     error: str | None = None
     result: dict[str, Any] | None = None
+    completed_at: float | None = None
 
 
 class MessageQueueManager:
@@ -97,11 +99,13 @@ class MessageQueueManager:
                     # Mark as completed
                     msg.status = MessageStatus.COMPLETED
                     msg.result = result
+                    msg.completed_at = time.time()
 
                 except Exception as e:
                     # Mark as failed
                     msg.status = MessageStatus.FAILED
                     msg.error = str(e)
+                    msg.completed_at = time.time()
 
                 finally:
                     # Mark task as done in queue
