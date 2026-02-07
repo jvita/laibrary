@@ -12,60 +12,76 @@ from starlette.routing import Mount, Route, WebSocketRoute
 from starlette.staticfiles import StaticFiles
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
-from ..chat import ChatSession, _list_projects
+from ..chat import ChatSession
+from ..commands import is_immediate_command
+from ..projects import list_projects
 from ..queue_manager import MessageQueueManager, MessageStatus
 
-# Module-level singleton state
-_session: ChatSession | None = None
-_queue_manager: MessageQueueManager | None = None
-_lock = asyncio.Lock()
-_connected_clients: WeakSet[WebSocket] = WeakSet()
-_notifier_task: asyncio.Task | None = None
-_last_notified: dict[int, int] = {}  # websocket_id -> last_message_id notified
+
+def _get_session(app: Starlette) -> ChatSession:
+    """Get or create the ChatSession singleton from app.state."""
+    if not hasattr(app.state, "session") or app.state.session is None:
+        app.state.session = ChatSession(data_dir=app.state.data_dir)
+    return app.state.session
 
 
-def _get_session(data_dir: Path) -> ChatSession:
-    """Get or create the ChatSession singleton."""
-    global _session
-    if _session is None:
-        _session = ChatSession(data_dir=data_dir)
-    return _session
+def _get_queue_manager(app: Starlette) -> MessageQueueManager:
+    """Get or create the MessageQueueManager singleton from app.state."""
+    if not hasattr(app.state, "queue_manager") or app.state.queue_manager is None:
+        session = _get_session(app)
+        app.state.queue_manager = MessageQueueManager(session, app.state.data_dir)
+    return app.state.queue_manager
 
 
-def _get_queue_manager(data_dir: Path) -> MessageQueueManager:
-    """Get or create the MessageQueueManager singleton."""
-    global _queue_manager
-    if _queue_manager is None:
-        session = _get_session(data_dir)
-        _queue_manager = MessageQueueManager(session, data_dir)
-    return _queue_manager
+def _get_lock(app: Starlette) -> asyncio.Lock:
+    """Get or create the lock from app.state."""
+    if not hasattr(app.state, "lock") or app.state.lock is None:
+        app.state.lock = asyncio.Lock()
+    return app.state.lock
 
 
-async def _notify_clients():
+def _get_connected_clients(app: Starlette) -> WeakSet:
+    """Get or create the connected clients set from app.state."""
+    if (
+        not hasattr(app.state, "connected_clients")
+        or app.state.connected_clients is None
+    ):
+        app.state.connected_clients = WeakSet()
+    return app.state.connected_clients
+
+
+def _get_last_notified(app: Starlette) -> dict[int, int]:
+    """Get or create the last_notified dict from app.state."""
+    if not hasattr(app.state, "last_notified") or app.state.last_notified is None:
+        app.state.last_notified = {}
+    return app.state.last_notified
+
+
+async def _notify_clients(app: Starlette):
     """Background task to notify WebSocket clients of completed messages."""
-    global _last_notified
+    queue_manager = _get_queue_manager(app)
+    connected_clients = _get_connected_clients(app)
+    last_notified = _get_last_notified(app)
+    session = _get_session(app)
 
     while True:
         await asyncio.sleep(0.5)  # Poll every 500ms
-
-        if _queue_manager is None:
-            continue
 
         try:
             now = time.time()
             cleanup_ids = []
 
             # Check for newly completed/failed messages
-            for msg_id, msg in list(_queue_manager.messages.items()):
+            for msg_id, msg in list(queue_manager.messages.items()):
                 if msg.status not in (MessageStatus.COMPLETED, MessageStatus.FAILED):
                     continue
 
                 # Notify all connected clients that haven't seen this message
-                clients = list(_connected_clients)
+                clients = list(connected_clients)
                 all_notified = True
                 for ws in clients:
                     ws_id = id(ws)
-                    last_seen = _last_notified.get(ws_id, 0)
+                    last_seen = last_notified.get(ws_id, 0)
 
                     if msg_id > last_seen:
                         try:
@@ -81,9 +97,7 @@ async def _notify_clients():
                                         "update_details": msg.result.get(
                                             "update_details"
                                         ),
-                                        "current_project": _session.current_project
-                                        if _session
-                                        else None,
+                                        "current_project": session.current_project,
                                     }
                                 )
                             else:
@@ -94,7 +108,7 @@ async def _notify_clients():
                                         "error": msg.error,
                                     }
                                 )
-                            _last_notified[ws_id] = msg_id
+                            last_notified[ws_id] = msg_id
                         except Exception:
                             # Client disconnected, will be cleaned up
                             all_notified = False
@@ -108,7 +122,7 @@ async def _notify_clients():
                     cleanup_ids.append(msg_id)
 
             for msg_id in cleanup_ids:
-                _queue_manager.messages.pop(msg_id, None)
+                queue_manager.messages.pop(msg_id, None)
 
         except Exception:
             # Prevent the notifier task from dying on unexpected errors
@@ -117,22 +131,28 @@ async def _notify_clients():
 
 async def websocket_endpoint(websocket: WebSocket) -> None:
     """Handle WebSocket connections for real-time chat with queueing."""
-    global _notifier_task
+    app = websocket.app
 
     await websocket.accept()
-    _connected_clients.add(websocket)
-    _last_notified[id(websocket)] = 0
+    connected_clients = _get_connected_clients(app)
+    last_notified = _get_last_notified(app)
+    connected_clients.add(websocket)
+    last_notified[id(websocket)] = 0
 
-    data_dir = websocket.app.state.data_dir
-    queue_manager = _get_queue_manager(data_dir)
+    queue_manager = _get_queue_manager(app)
+    session = _get_session(app)
+    lock = _get_lock(app)
 
     # Start notifier task if not running
-    if _notifier_task is None or _notifier_task.done():
-        _notifier_task = asyncio.create_task(_notify_clients())
+    if (
+        not hasattr(app.state, "notifier_task")
+        or app.state.notifier_task is None
+        or app.state.notifier_task.done()
+    ):
+        app.state.notifier_task = asyncio.create_task(_notify_clients(app))
 
     try:
         # Send initial status
-        session = _get_session(data_dir)
         await websocket.send_json(
             {
                 "type": "status",
@@ -154,7 +174,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
             stripped = user_message.strip().lower()
 
             if stripped == "/clear":
-                async with _lock:
+                async with lock:
                     await session.end_session()
                     session.clear_history()
                     if session.session_manager:
@@ -162,15 +182,9 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                 await websocket.send_json({"type": "cleared"})
                 continue
 
-            if (
-                stripped in ("/list", "/projects")
-                or stripped.startswith("/use ")
-                or stripped == "/read"
-                or stripped.startswith("/read ")
-                or (stripped.startswith("/") and " " not in stripped)
-            ):
+            if is_immediate_command(user_message):
                 # Process immediately (these are fast operations)
-                async with _lock:
+                async with lock:
                     result = await session.send_message(user_message)
                 await websocket.send_json(
                     {
@@ -203,15 +217,16 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         except Exception:
             pass
     finally:
-        _connected_clients.discard(websocket)
-        _last_notified.pop(id(websocket), None)
+        connected_clients.discard(websocket)
+        last_notified.pop(id(websocket), None)
 
 
 async def api_message(request) -> JSONResponse:
     """HTTP POST for sending messages (queued)."""
-    data_dir = request.app.state.data_dir
-    queue_manager = _get_queue_manager(data_dir)
-    session = _get_session(data_dir)
+    app = request.app
+    queue_manager = _get_queue_manager(app)
+    session = _get_session(app)
+    lock = _get_lock(app)
 
     try:
         body = await request.json()
@@ -224,21 +239,15 @@ async def api_message(request) -> JSONResponse:
         stripped = user_message.strip().lower()
 
         if stripped == "/clear":
-            async with _lock:
+            async with lock:
                 await session.end_session()
                 session.clear_history()
                 if session.session_manager:
                     session.session_manager.start_session()
             return JSONResponse({"type": "cleared"})
 
-        if (
-            stripped in ("/list", "/projects")
-            or stripped.startswith("/use ")
-            or stripped == "/read"
-            or stripped.startswith("/read ")
-            or (stripped.startswith("/") and " " not in stripped)
-        ):
-            async with _lock:
+        if is_immediate_command(user_message):
+            async with lock:
                 result = await session.send_message(user_message)
             return JSONResponse(
                 {
@@ -269,9 +278,9 @@ async def api_message(request) -> JSONResponse:
 
 async def api_poll(request) -> JSONResponse:
     """HTTP GET to poll for message results."""
-    data_dir = request.app.state.data_dir
-    queue_manager = _get_queue_manager(data_dir)
-    session = _get_session(data_dir)
+    app = request.app
+    queue_manager = _get_queue_manager(app)
+    session = _get_session(app)
 
     # Get the 'since' parameter (last message ID client has seen)
     since = int(request.query_params.get("since", 0))
@@ -311,9 +320,9 @@ async def api_poll(request) -> JSONResponse:
 
 async def api_status(request) -> JSONResponse:
     """Get current session and queue status."""
-    data_dir = request.app.state.data_dir
-    queue_manager = _get_queue_manager(data_dir)
-    session = _get_session(data_dir)
+    app = request.app
+    queue_manager = _get_queue_manager(app)
+    session = _get_session(app)
 
     queue_status = queue_manager.get_queue_status()
 
@@ -329,7 +338,7 @@ async def api_status(request) -> JSONResponse:
 async def api_projects(request) -> JSONResponse:
     """List available projects."""
     data_dir = request.app.state.data_dir
-    projects = _list_projects(data_dir)
+    projects = list_projects(data_dir)
     return JSONResponse({"projects": projects})
 
 
@@ -355,5 +364,12 @@ def create_app(data_dir: Path) -> Starlette:
 
     app = Starlette(routes=routes)
     app.state.data_dir = data_dir
+    # Initialize state slots (lazily populated on first access)
+    app.state.session = None
+    app.state.queue_manager = None
+    app.state.lock = None
+    app.state.connected_clients = None
+    app.state.notifier_task = None
+    app.state.last_notified = None
 
     return app

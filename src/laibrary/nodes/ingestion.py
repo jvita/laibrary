@@ -4,18 +4,8 @@ import re
 from pathlib import Path
 
 from ..git_wrapper import IsolatedGitRepo
+from ..projects import list_projects
 from ..schemas import PKMState
-
-
-def _list_projects(data_dir: Path) -> list[str]:
-    """List available project names (without .md extension)."""
-    repo = IsolatedGitRepo(data_dir)
-    projects = []
-    for file_path in repo.list_files("projects/*.md"):
-        # Extract project name from path like "projects/webapp.md"
-        name = file_path.replace("projects/", "").replace(".md", "")
-        projects.append(name)
-    return sorted(projects)
 
 
 def ingestion_node(state: PKMState, data_dir: Path | None = None) -> PKMState:
@@ -59,7 +49,7 @@ def ingestion_node(state: PKMState, data_dir: Path | None = None) -> PKMState:
 
     if not match:
         # No project specified
-        projects = _list_projects(data_dir)
+        projects = list_projects(data_dir)
         if projects:
             project_list = ", ".join(projects)
             return {
@@ -86,7 +76,7 @@ def ingestion_node(state: PKMState, data_dir: Path | None = None) -> PKMState:
             pass  # Allow creation
         else:
             # Interactive mode - only allow creation if no other projects exist
-            projects = _list_projects(data_dir)
+            projects = list_projects(data_dir)
             if projects:
                 project_list = ", ".join(projects)
                 return {

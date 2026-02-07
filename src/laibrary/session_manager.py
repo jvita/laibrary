@@ -1,13 +1,10 @@
 """Session manager for tracking chat sessions as first-class notes."""
 
-import os
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
-from pydantic_ai import Agent
-
-from .config import MAX_RETRIES, QUERY_SETTINGS
+from .config import QUERY_SETTINGS, create_agent
 from .git_wrapper import IsolatedGitRepo
 
 
@@ -115,17 +112,18 @@ class SessionManager:
             return "Empty session."
 
         # Build transcript text for summarization
-        transcript_text = self._format_transcript_for_summary()
+        transcript_text = "\n\n".join(
+            f"{'User' if e.role == 'user' else 'Assistant'}: {e.content}"
+            for e in self.transcript
+        )
 
         prompt = f"""Summarize this conversation in 2-3 sentences. Focus on what was discussed and any key outcomes.
 
 {transcript_text}"""
 
         try:
-            agent = Agent(
-                os.environ["MODEL"],
+            agent = create_agent(
                 system_prompt="You are a helpful assistant that summarizes conversations concisely.",
-                retries=MAX_RETRIES,
                 model_settings=QUERY_SETTINGS,
             )
             result = await agent.run(prompt)
@@ -134,16 +132,8 @@ class SessionManager:
             # Fallback if summarization fails
             return "Session summary unavailable."
 
-    def _format_transcript_for_summary(self) -> str:
-        """Format transcript entries for summarization."""
-        parts = []
-        for entry in self.transcript:
-            role_label = "User" if entry.role == "user" else "Assistant"
-            parts.append(f"{role_label}: {entry.content}")
-        return "\n\n".join(parts)
-
     def _format_session_document(self, ended_at: datetime, summary: str) -> str:
-        """Format the complete session document in markdown.
+        """Format the session document in markdown (metadata + summary only).
 
         Format:
         # Chat Session - YYYY-MM-DD HH:MM
@@ -156,10 +146,6 @@ class SessionManager:
 
         ## Summary
         (LLM-generated summary)
-
-        ## Transcript
-        ### 14:30 - User
-        Message content...
         """
         date_str = self.started_at.strftime("%Y-%m-%d %H:%M")
         started_time = self.started_at.strftime("%H:%M")
@@ -188,17 +174,7 @@ class SessionManager:
             "",
             "## Summary",
             summary,
-            "",
-            "## Transcript",
         ]
-
-        # Add transcript entries
-        for entry in self.transcript:
-            time_str = entry.timestamp.strftime("%H:%M")
-            role_label = "User" if entry.role == "user" else "Assistant"
-            parts.append(f"### {time_str} - {role_label}")
-            parts.append(entry.content)
-            parts.append("")
 
         return "\n".join(parts)
 

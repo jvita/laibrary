@@ -147,21 +147,6 @@ async def committer_node(state: PKMState, data_dir: Path | None = None) -> PKMSt
         if "Notes" in updated_sections:
             updated_sections["Notes"] = _format_date_logs(updated_sections["Notes"])
 
-        # Inject session link into Session History if session_id is present
-        session_id = state.get("session_id")
-        if session_id:
-            commit_first_line = update.commit_message.split("\n")[0]
-            session_entry = f"- [[{session_id}]] - {commit_first_line}"
-
-            if "Session History" in updated_sections:
-                # Append to existing section
-                updated_sections["Session History"] = (
-                    updated_sections["Session History"] + "\n" + session_entry
-                )
-            else:
-                # Create new section
-                updated_sections["Session History"] = session_entry
-
         # Render updated document
         new_content = render_document(title, updated_sections)
 

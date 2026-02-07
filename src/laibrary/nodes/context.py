@@ -33,12 +33,6 @@ def context_node(state: PKMState, data_dir: Path | None = None) -> PKMState:
     content = repo.get_file_content(target_project)
 
     if content is not None:
-        # # Strip the "## Session History" section, which is always last.
-        # # This helps to avoid polluting the context window.
-        # split_marker = "## Session History"
-        # if split_marker in content:
-        #     content = content.split(split_marker)[0].strip()
-
         context_files[target_project] = content
     # If file doesn't exist, that's OK - architect will create it
 

@@ -1,12 +1,10 @@
 """Architect node - LLM agent that generates document updates."""
 
-import os
 from pathlib import Path
 
 import logfire
-from pydantic_ai import Agent
 
-from ..config import ARCHITECT_SETTINGS, MAX_RETRIES
+from ..config import ARCHITECT_SETTINGS, create_agent
 from ..prompts import ARCHITECT_SYSTEM_PROMPT
 from ..schemas import DocumentUpdate, PKMState
 
@@ -40,13 +38,11 @@ def _build_context_message(target_file: str, context_files: dict[str, str]) -> s
         return f"## New Document: {target_file}\n\nThis is a new project document. The title should be: {title}"
 
 
-def _create_agent() -> Agent[None, DocumentUpdate]:
+def _create_agent():
     """Create the Pydantic-AI agent for document updates."""
-    return Agent(
-        os.environ["MODEL"],
+    return create_agent(
         system_prompt=ARCHITECT_SYSTEM_PROMPT,
         output_type=DocumentUpdate,
-        retries=MAX_RETRIES,
         model_settings=ARCHITECT_SETTINGS,
     )
 
