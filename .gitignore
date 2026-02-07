@@ -208,3 +208,7 @@ pip-selfcheck.json
 
 .env
 data/
+
+*.crt
+*.key
+*.pem
